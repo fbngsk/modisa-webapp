@@ -22,67 +22,100 @@ If you cannot identify the species, return:
 {"species_id": "unknown", "confidence": 0.0, "reasoning": "explanation"}`;
 
 export async function POST(request: NextRequest) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  
+  // Debug: Check if API key exists
+  if (!apiKey) {
+    console.error('GEMINI_API_KEY is not set');
+    return NextResponse.json({ 
+      error: 'API key not configured',
+      debug: 'GEMINI_API_KEY environment variable is missing'
+    }, { status: 500 });
+  }
+
   try {
-    const { imageBase64 } = await request.json();
+    const body = await request.json();
+    const { imageBase64 } = body;
 
     if (!imageBase64) {
       return NextResponse.json({ error: 'No image provided' }, { status: 400 });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'API key not configured' }, { status: 500 });
-    }
+    // Remove data URL prefix if present
+    const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+
+    const requestBody = {
+      contents: [{
+        parts: [
+          { text: SPECIES_CONTEXT },
+          {
+            inline_data: {
+              mime_type: 'image/jpeg',
+              data: base64Data
+            }
+          }
+        ]
+      }],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 256
+      }
+    };
+
+    console.log('Calling Gemini API...');
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: SPECIES_CONTEXT },
-              {
-                inline_data: {
-                  mime_type: 'image/jpeg',
-                  data: imageBase64.replace(/^data:image\/\w+;base64,/, '')
-                }
-              }
-            ]
-          }],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 256
-          }
-        })
+        body: JSON.stringify(requestBody)
       }
     );
 
+    const responseText = await response.text();
+    console.log('Gemini response status:', response.status);
+
     if (!response.ok) {
-      const error = await response.text();
-      console.error('Gemini API error:', error);
-      return NextResponse.json({ error: 'AI identification failed' }, { status: 500 });
+      console.error('Gemini API error:', responseText);
+      return NextResponse.json({ 
+        error: 'AI identification failed',
+        status: response.status,
+        details: responseText.substring(0, 200)
+      }, { status: 500 });
     }
 
-    const data = await response.json();
+    const data = JSON.parse(responseText);
     const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
+    console.log('Gemini text response:', textResponse);
+
     if (!textResponse) {
-      return NextResponse.json({ error: 'No response from AI' }, { status: 500 });
+      return NextResponse.json({ 
+        error: 'No response from AI',
+        data: data
+      }, { status: 500 });
     }
 
     // Parse JSON from response
     const jsonMatch = textResponse.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      return NextResponse.json({ error: 'Invalid AI response format' }, { status: 500 });
+      return NextResponse.json({ 
+        error: 'Invalid AI response format',
+        response: textResponse
+      }, { status: 500 });
     }
 
     const result = JSON.parse(jsonMatch[0]);
+    console.log('Parsed result:', result);
+    
     return NextResponse.json(result);
 
   } catch (error) {
     console.error('Identification error:', error);
-    return NextResponse.json({ error: 'Identification failed' }, { status: 500 });
+    return NextResponse.json({ 
+      error: 'Identification failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 });
   }
 }
