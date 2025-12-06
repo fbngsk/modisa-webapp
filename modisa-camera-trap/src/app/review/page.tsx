@@ -1,281 +1,253 @@
-'use client'
+'use client';
 
-import { useEffect, useState } from 'react'
-import Image from 'next/image'
-import Navbar from '@/components/Navbar'
-import ProtectedRoute from '@/components/ProtectedRoute'
-import { supabase } from '@/lib/supabase'
-import { Sighting, Species } from '@/types/database'
-import { ChevronLeft, ChevronRight, Check, X, Loader2 } from 'lucide-react'
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import Image from 'next/image';
+import { ArrowLeft, Check, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { SPECIES_LIST, CAMERA_STATIONS } from '@/lib/species';
+
+interface Sighting {
+  id: string;
+  image_url: string;
+  camera_station: string;
+  species_id: string | null;
+  ai_suggestion: string | null;
+  ai_confidence: number | null;
+  captured_at: string;
+  status: string;
+}
 
 export default function ReviewPage() {
-  const [sightings, setSightings] = useState<Sighting[]>([])
-  const [species, setSpecies] = useState<Species[]>([])
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  
-  // Form state
-  const [selectedSpecies, setSelectedSpecies] = useState('')
-  const [count, setCount] = useState(1)
-  const [notes, setNotes] = useState('')
+  const [sightings, setSightings] = useState<Sighting[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [selectedSpecies, setSelectedSpecies] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetchData()
-  }, [])
+    fetchPendingSightings();
+  }, []);
 
-  const fetchData = async () => {
-    const [sightingsRes, speciesRes] = await Promise.all([
-      supabase
-        .from('sightings')
-        .select('*')
-        .eq('status', 'pending')
-        .order('created_at', { ascending: true }),
-      supabase
-        .from('species')
-        .select('*')
-        .order('common_name')
-    ])
+  const fetchPendingSightings = async () => {
+    const { data, error } = await supabase
+      .from('sightings')
+      .select('*')
+      .eq('status', 'pending')
+      .order('captured_at', { ascending: false });
 
-    if (sightingsRes.data) setSightings(sightingsRes.data)
-    if (speciesRes.data) setSpecies(speciesRes.data)
-    setLoading(false)
-  }
+    if (!error && data) {
+      setSightings(data);
+      if (data.length > 0 && data[0].ai_suggestion) {
+        setSelectedSpecies(data[0].ai_suggestion);
+      }
+    }
+    setLoading(false);
+  };
 
-  const currentSighting = sightings[currentIndex]
+  const currentSighting = sightings[currentIndex];
 
-  const handleVerify = async () => {
-    if (!currentSighting || !selectedSpecies) return
-    setSaving(true)
-
-    const selectedSpeciesData = species.find(s => s.common_name === selectedSpecies)
-
-    // Create detection
-    await supabase.from('detections').insert({
-      sighting_id: currentSighting.id,
-      species_common: selectedSpecies,
-      species_scientific: selectedSpeciesData?.scientific_name || null,
-      count: count,
-      confidence: 1.0,
-      is_ai_generated: false,
-    })
-
-    // Update sighting status
-    await supabase
+  const handleConfirm = async () => {
+    if (!currentSighting || !selectedSpecies) return;
+    
+    setSaving(true);
+    const { error } = await supabase
       .from('sightings')
       .update({
-        status: 'verified',
-        notes: notes || null,
-        requires_review: false,
-        verified_at: new Date().toISOString(),
+        species_id: selectedSpecies,
+        status: 'confirmed',
+        reviewed_at: new Date().toISOString(),
       })
-      .eq('id', currentSighting.id)
+      .eq('id', currentSighting.id);
 
-    // Remove from list and reset form
-    setSightings(prev => prev.filter((_, i) => i !== currentIndex))
-    resetForm()
-    if (currentIndex >= sightings.length - 1) {
-      setCurrentIndex(Math.max(0, currentIndex - 1))
+    if (!error) {
+      const newSightings = sightings.filter((_, i) => i !== currentIndex);
+      setSightings(newSightings);
+      if (currentIndex >= newSightings.length && newSightings.length > 0) {
+        setCurrentIndex(newSightings.length - 1);
+      }
+      if (newSightings[currentIndex]?.ai_suggestion) {
+        setSelectedSpecies(newSightings[currentIndex].ai_suggestion);
+      } else {
+        setSelectedSpecies('');
+      }
     }
-    setSaving(false)
-  }
+    setSaving(false);
+  };
 
   const handleReject = async () => {
-    if (!currentSighting) return
-    setSaving(true)
-
-    await supabase
+    if (!currentSighting) return;
+    
+    setSaving(true);
+    const { error } = await supabase
       .from('sightings')
       .update({
         status: 'rejected',
-        notes: notes || null,
-        requires_review: false,
+        reviewed_at: new Date().toISOString(),
       })
-      .eq('id', currentSighting.id)
+      .eq('id', currentSighting.id);
 
-    setSightings(prev => prev.filter((_, i) => i !== currentIndex))
-    resetForm()
-    if (currentIndex >= sightings.length - 1) {
-      setCurrentIndex(Math.max(0, currentIndex - 1))
+    if (!error) {
+      const newSightings = sightings.filter((_, i) => i !== currentIndex);
+      setSightings(newSightings);
+      if (currentIndex >= newSightings.length && newSightings.length > 0) {
+        setCurrentIndex(newSightings.length - 1);
+      }
     }
-    setSaving(false)
-  }
+    setSaving(false);
+  };
 
-  const resetForm = () => {
-    setSelectedSpecies('')
-    setCount(1)
-    setNotes('')
-  }
-
-  const goNext = () => {
+  const goToNext = () => {
     if (currentIndex < sightings.length - 1) {
-      setCurrentIndex(currentIndex + 1)
-      resetForm()
+      setCurrentIndex(currentIndex + 1);
+      const next = sightings[currentIndex + 1];
+      setSelectedSpecies(next?.ai_suggestion || '');
     }
-  }
+  };
 
-  const goPrev = () => {
+  const goToPrev = () => {
     if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1)
-      resetForm()
+      setCurrentIndex(currentIndex - 1);
+      const prev = sightings[currentIndex - 1];
+      setSelectedSpecies(prev?.ai_suggestion || '');
     }
-  }
+  };
+
+  const getStationName = (id: string) => {
+    return CAMERA_STATIONS.find(s => s.id === id)?.name || id;
+  };
 
   if (loading) {
     return (
-      <ProtectedRoute>
-        <Navbar />
-        <main className="max-w-6xl mx-auto px-4 py-8">
-          <div className="text-gray-400">Loading...</div>
-        </main>
-      </ProtectedRoute>
-    )
-  }
-
-  if (sightings.length === 0) {
-    return (
-      <ProtectedRoute>
-        <Navbar />
-        <main className="max-w-6xl mx-auto px-4 py-8">
-          <h1 className="text-2xl font-bold mb-8">Review Sightings</h1>
-          <div className="card text-center py-12">
-            <p className="text-gray-400">No pending sightings to review</p>
-          </div>
-        </main>
-      </ProtectedRoute>
-    )
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <p className="text-white">Loading...</p>
+      </div>
+    );
   }
 
   return (
-    <ProtectedRoute>
-      <Navbar />
-      <main className="max-w-6xl mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold">Review Sightings</h1>
+    <div className="min-h-screen bg-gray-900 p-6">
+      <div className="max-w-4xl mx-auto">
+        <Link href="/dashboard" className="inline-flex items-center text-gray-400 hover:text-white mb-6">
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back to Dashboard
+        </Link>
+
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold">
+            <span className="text-green-500">Review</span> Pending
+          </h1>
           <span className="text-gray-400">
-            {currentIndex + 1} of {sightings.length}
+            {sightings.length} pending
           </span>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Image viewer */}
-          <div className="lg:col-span-2">
-            <div className="card p-0 overflow-hidden">
-              <div className="relative aspect-video bg-black">
-                {currentSighting && (
-                  <Image
-                    src={currentSighting.image_url}
-                    alt="Camera trap image"
-                    fill
-                    className="object-contain"
-                    unoptimized
-                  />
-                )}
+        {sightings.length === 0 ? (
+          <div className="bg-gray-800 rounded-lg p-8 text-center">
+            <p className="text-gray-400">No pending sightings to review</p>
+            <Link href="/upload" className="text-green-500 hover:underline mt-2 inline-block">
+              Upload new images
+            </Link>
+          </div>
+        ) : currentSighting && (
+          <div className="space-y-6">
+            <div className="relative bg-gray-800 rounded-lg overflow-hidden">
+              <div className="aspect-video relative">
+                <Image
+                  src={currentSighting.image_url}
+                  alt="Camera trap image"
+                  fill
+                  className="object-contain"
+                />
               </div>
-              <div className="flex items-center justify-between p-4 border-t border-modisa-border">
+              
+              <div className="absolute top-4 right-4 flex gap-2">
                 <button
-                  onClick={goPrev}
+                  onClick={goToPrev}
                   disabled={currentIndex === 0}
-                  className="btn-secondary disabled:opacity-30"
+                  className="bg-black/50 hover:bg-black/70 disabled:opacity-50 p-2 rounded-full"
                 >
-                  <ChevronLeft size={20} />
+                  <ChevronLeft className="w-6 h-6 text-white" />
                 </button>
-                <span className="text-sm text-gray-400 truncate px-4">
-                  {currentSighting?.original_filename}
-                </span>
                 <button
-                  onClick={goNext}
+                  onClick={goToNext}
                   disabled={currentIndex === sightings.length - 1}
-                  className="btn-secondary disabled:opacity-30"
+                  className="bg-black/50 hover:bg-black/70 disabled:opacity-50 p-2 rounded-full"
                 >
-                  <ChevronRight size={20} />
+                  <ChevronRight className="w-6 h-6 text-white" />
                 </button>
+              </div>
+
+              <div className="absolute bottom-4 left-4 bg-black/70 px-3 py-1 rounded">
+                <p className="text-white text-sm">
+                  {currentIndex + 1} of {sightings.length}
+                </p>
               </div>
             </div>
-          </div>
 
-          {/* Review form */}
-          <div className="card">
-            <h2 className="font-semibold mb-4">Identify Species</h2>
-            
-            <div className="space-y-4">
+            <div className="bg-gray-800 rounded-lg p-4">
+              <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+                <div>
+                  <span className="text-gray-400">Station:</span>
+                  <span className="text-white ml-2">{getStationName(currentSighting.camera_station)}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400">Captured:</span>
+                  <span className="text-white ml-2">
+                    {new Date(currentSighting.captured_at).toLocaleDateString()}
+                  </span>
+                </div>
+              </div>
+
+              {currentSighting.ai_suggestion && (
+                <div className="mb-4 p-3 bg-green-900/30 border border-green-700 rounded-lg">
+                  <p className="text-green-400 text-sm">
+                    AI Suggestion: <strong>{SPECIES_LIST.find(s => s.id === currentSighting.ai_suggestion)?.commonName || currentSighting.ai_suggestion}</strong>
+                    {currentSighting.ai_confidence && ` (${Math.round(currentSighting.ai_confidence * 100)}% confidence)`}
+                  </p>
+                </div>
+              )}
+
               <div>
-                <label className="block text-sm text-gray-400 mb-2">Species</label>
+                <label className="block text-gray-300 mb-2">Select Species</label>
                 <select
                   value={selectedSpecies}
                   onChange={(e) => setSelectedSpecies(e.target.value)}
-                  className="input w-full"
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:border-green-500 focus:outline-none"
                 >
                   <option value="">Select species...</option>
-                  {species.map((s) => (
-                    <option key={s.id} value={s.common_name}>
-                      {s.common_name}
+                  <option value="empty">No animal visible</option>
+                  <option value="unknown">Unknown species</option>
+                  {SPECIES_LIST.map(species => (
+                    <option key={species.id} value={species.id}>
+                      {species.commonName} ({species.scientificName})
                     </option>
                   ))}
                 </select>
               </div>
-
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Count</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={count}
-                  onChange={(e) => setCount(parseInt(e.target.value) || 1)}
-                  className="input w-full"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Notes (optional)</label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="input w-full h-20 resize-none"
-                  placeholder="Behavior, age, condition..."
-                />
-              </div>
-
-              <div className="flex gap-2 pt-4">
-                <button
-                  onClick={handleVerify}
-                  disabled={!selectedSpecies || saving}
-                  className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {saving ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
-                  Verify
-                </button>
-                <button
-                  onClick={handleReject}
-                  disabled={saving}
-                  className="btn-secondary flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  <X size={18} />
-                  Reject
-                </button>
-              </div>
             </div>
 
-            {currentSighting && (
-              <div className="mt-6 pt-6 border-t border-modisa-border">
-                <h3 className="text-sm text-gray-400 mb-2">Metadata</h3>
-                <dl className="text-sm space-y-1">
-                  <div className="flex justify-between">
-                    <dt className="text-gray-500">Uploaded</dt>
-                    <dd>{new Date(currentSighting.created_at).toLocaleDateString()}</dd>
-                  </div>
-                  {currentSighting.camera_id && (
-                    <div className="flex justify-between">
-                      <dt className="text-gray-500">Camera</dt>
-                      <dd>{currentSighting.camera_id}</dd>
-                    </div>
-                  )}
-                </dl>
-              </div>
-            )}
+            <div className="flex gap-4">
+              <button
+                onClick={handleReject}
+                disabled={saving}
+                className="flex-1 bg-red-600/20 hover:bg-red-600/30 border border-red-600 text-red-500 font-semibold py-3 rounded-lg transition-colors flex items-center justify-center"
+              >
+                <X className="w-5 h-5 mr-2" />
+                Reject
+              </button>
+              <button
+                onClick={handleConfirm}
+                disabled={saving || !selectedSpecies}
+                className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center"
+              >
+                <Check className="w-5 h-5 mr-2" />
+                Confirm
+              </button>
+            </div>
           </div>
-        </div>
-      </main>
-    </ProtectedRoute>
-  )
+        )}
+      </div>
+    </div>
+  );
 }
