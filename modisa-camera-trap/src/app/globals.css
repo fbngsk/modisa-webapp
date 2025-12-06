@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@layer components {
+  .btn-primary {
+    @apply bg-modisa-green hover:bg-modisa-green-dark text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+  }
+  
+  .btn-secondary {
+    @apply bg-modisa-surface hover:bg-modisa-border text-white font-medium py-2 px-4 rounded-lg border border-modisa-border transition-colors duration-200;
+  }
+  
+  .card {
+    @apply bg-modisa-surface border border-modisa-border rounded-xl p-6;
+  }
+  
+  .input {
+    @apply bg-modisa-bg border border-modisa-border rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-modisa-green transition-colors duration-200;
+  }
+}
+
+body {
+  @apply bg-modisa-bg text-white;
+}
