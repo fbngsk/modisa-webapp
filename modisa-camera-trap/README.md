@@ -1,6 +1,6 @@
 # Modisa Camera Trap
 
-Wildlife monitoring system for the Kalahari, Botswana.
+Wildlife monitoring system for the Kalahari, Botswana. 
 
 ## Setup
 
