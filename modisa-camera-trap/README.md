@@ -6,7 +6,7 @@ Wildlife monitoring system for the Kalahari, Botswana.
 
 ### 1. Install dependencies
 
-```bash
+```bash 
 npm install
 ```
 
