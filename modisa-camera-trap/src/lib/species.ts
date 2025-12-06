@@ -69,12 +69,8 @@ export interface CameraStation {
 }
 
 export const CAMERA_STATIONS: CameraStation[] = [
-  { id: 'waterhole-north', name: 'Waterhole North' },
-  { id: 'waterhole-south', name: 'Waterhole South' },
-  { id: 'pan-central', name: 'Central Pan' },
-  { id: 'dune-crossing', name: 'Dune Crossing' },
-  { id: 'acacia-grove', name: 'Acacia Grove' },
-  { id: 'riverbed-east', name: 'Dry Riverbed East' },
-  { id: 'salt-lick', name: 'Salt Lick' },
-  { id: 'boundary-fence', name: 'Boundary Fence' },
+  { id: 'gate-waterhole', name: 'Gate Waterhole' },
+  { id: 'modisa-pan', name: 'Modisa Pan' },
+  { id: 'sirgas-waterhole', name: 'Sirgas Waterhole' },
+  { id: 'dune-waterhole', name: 'Dune Waterhole' },
 ];
