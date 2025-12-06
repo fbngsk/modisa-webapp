@@ -1,179 +1,161 @@
-'use client'
+'use client';
 
-import { useState, useCallback } from 'react'
-import Navbar from '@/components/Navbar'
-import ProtectedRoute from '@/components/ProtectedRoute'
-import { supabase } from '@/lib/supabase'
-import { Upload, CheckCircle, XCircle, Loader2 } from 'lucide-react'
-
-interface UploadFile {
-  file: File
-  status: 'pending' | 'uploading' | 'success' | 'error'
-  error?: string
-}
+import { useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { ArrowLeft, Upload, Camera, X } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { CAMERA_STATIONS } from '@/lib/species';
 
 export default function UploadPage() {
-  const [files, setFiles] = useState<UploadFile[]>([])
-  const [uploading, setUploading] = useState(false)
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    const droppedFiles = Array.from(e.dataTransfer.files).filter(f => 
-      f.type.startsWith('image/')
-    )
-    addFiles(droppedFiles)
-  }, [])
+  const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [selectedStation, setSelectedStation] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const selectedFiles = Array.from(e.target.files)
-      addFiles(selectedFiles)
+      setSelectedFiles(Array.from(e.target.files));
     }
-  }
+  };
 
-  const addFiles = (newFiles: File[]) => {
-    const uploadFiles: UploadFile[] = newFiles.map(file => ({
-      file,
-      status: 'pending'
-    }))
-    setFiles(prev => [...prev, ...uploadFiles])
-  }
+  const removeFile = (index: number) => {
+    setSelectedFiles(files => files.filter((_, i) => i !== index));
+  };
 
-  const uploadFiles = async () => {
-    setUploading(true)
-    
-    for (let i = 0; i < files.length; i++) {
-      if (files[i].status !== 'pending') continue
-      
-      setFiles(prev => prev.map((f, idx) => 
-        idx === i ? { ...f, status: 'uploading' } : f
-      ))
+  const handleUpload = async () => {
+    if (selectedFiles.length === 0) {
+      setError('Please select at least one image');
+      return;
+    }
+    if (!selectedStation) {
+      setError('Please select a camera station');
+      return;
+    }
 
-      try {
-        const file = files[i].file
-        const timestamp = Date.now()
-        const fileName = `${timestamp}-${file.name}`
-        
-        // Upload to storage
+    setUploading(true);
+    setError('');
+
+    try {
+      for (const file of selectedFiles) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+        const filePath = `uploads/${fileName}`;
+
         const { error: uploadError } = await supabase.storage
           .from('camera-trap-images')
-          .upload(fileName, file)
+          .upload(filePath, file);
 
-        if (uploadError) throw uploadError
+        if (uploadError) throw uploadError;
 
-        // Get public URL
         const { data: { publicUrl } } = supabase.storage
           .from('camera-trap-images')
-          .getPublicUrl(fileName)
+          .getPublicUrl(filePath);
 
-        // Create sighting record
-        const { error: insertError } = await supabase
+        const { error: dbError } = await supabase
           .from('sightings')
           .insert({
             image_url: publicUrl,
-            original_filename: file.name,
+            camera_station: selectedStation,
             status: 'pending',
-            image_quality: 'clear',
-            requires_review: true,
-          })
+            captured_at: new Date().toISOString(),
+          });
 
-        if (insertError) throw insertError
-
-        setFiles(prev => prev.map((f, idx) => 
-          idx === i ? { ...f, status: 'success' } : f
-        ))
-      } catch (error) {
-        setFiles(prev => prev.map((f, idx) => 
-          idx === i ? { ...f, status: 'error', error: (error as Error).message } : f
-        ))
+        if (dbError) throw dbError;
       }
+
+      router.push('/review');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
     }
-    
-    setUploading(false)
-  }
-
-  const clearCompleted = () => {
-    setFiles(prev => prev.filter(f => f.status !== 'success'))
-  }
-
-  const pendingCount = files.filter(f => f.status === 'pending').length
-  const successCount = files.filter(f => f.status === 'success').length
+  };
 
   return (
-    <ProtectedRoute>
-      <Navbar />
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <h1 className="text-2xl font-bold mb-8">Upload Images</h1>
-        
-        <div
-          onDrop={handleDrop}
-          onDragOver={(e) => e.preventDefault()}
-          className="card border-dashed border-2 text-center py-12 mb-6"
-        >
-          <Upload className="mx-auto mb-4 text-gray-400" size={48} />
-          <p className="text-gray-400 mb-4">Drag and drop images here</p>
-          <label className="btn-primary cursor-pointer">
-            Browse Files
+    <div className="min-h-screen bg-gray-900 p-6">
+      <div className="max-w-2xl mx-auto">
+        <Link href="/dashboard" className="inline-flex items-center text-gray-400 hover:text-white mb-6">
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back to Dashboard
+        </Link>
+
+        <h1 className="text-2xl font-bold mb-6">
+          <span className="text-green-500">Upload</span> Images
+        </h1>
+
+        <div className="space-y-6">
+          <div>
+            <label className="block text-gray-300 mb-2">Camera Station</label>
+            <select
+              value={selectedStation}
+              onChange={(e) => setSelectedStation(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:border-green-500 focus:outline-none"
+            >
+              <option value="">Select station...</option>
+              {CAMERA_STATIONS.map(station => (
+                <option key={station.id} value={station.id}>
+                  {station.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="border-2 border-dashed border-gray-700 rounded-lg p-8 text-center cursor-pointer hover:border-green-500 transition-colors"
+          >
+            <Camera className="w-12 h-12 text-gray-500 mx-auto mb-4" />
+            <p className="text-gray-400 mb-2">Click to select images</p>
+            <p className="text-gray-500 text-sm">JPG, PNG up to 10MB each</p>
             <input
+              ref={fileInputRef}
               type="file"
-              multiple
               accept="image/*"
+              multiple
               onChange={handleFileSelect}
               className="hidden"
             />
-          </label>
-        </div>
+          </div>
 
-        {files.length > 0 && (
-          <>
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-gray-400">
-                {files.length} file{files.length !== 1 ? 's' : ''} selected
-                {successCount > 0 && ` • ${successCount} uploaded`}
-              </p>
-              <div className="flex gap-2">
-                {successCount > 0 && (
-                  <button onClick={clearCompleted} className="btn-secondary text-sm">
-                    Clear Completed
-                  </button>
-                )}
-                {pendingCount > 0 && (
-                  <button
-                    onClick={uploadFiles}
-                    disabled={uploading}
-                    className="btn-primary text-sm disabled:opacity-50"
-                  >
-                    {uploading ? 'Uploading...' : `Upload ${pendingCount}`}
-                  </button>
-                )}
-              </div>
-            </div>
-
+          {selectedFiles.length > 0 && (
             <div className="space-y-2">
-              {files.map((f, idx) => (
-                <div key={idx} className="card py-3 px-4 flex items-center justify-between">
-                  <span className="truncate flex-1 mr-4">{f.file.name}</span>
-                  {f.status === 'pending' && (
-                    <span className="text-gray-400 text-sm">Pending</span>
-                  )}
-                  {f.status === 'uploading' && (
-                    <Loader2 className="animate-spin text-modisa-green" size={20} />
-                  )}
-                  {f.status === 'success' && (
-                    <CheckCircle className="text-modisa-green" size={20} />
-                  )}
-                  {f.status === 'error' && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-red-400 text-sm">{f.error}</span>
-                      <XCircle className="text-red-400" size={20} />
-                    </div>
-                  )}
+              {selectedFiles.map((file, index) => (
+                <div key={index} className="flex items-center justify-between bg-gray-800 rounded-lg p-3">
+                  <span className="text-white truncate">{file.name}</span>
+                  <button
+                    onClick={() => removeFile(index)}
+                    className="text-gray-400 hover:text-red-500"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
               ))}
             </div>
-          </>
-        )}
-      </main>
-    </ProtectedRoute>
-  )
+          )}
+
+          {error && (
+            <p className="text-red-500 text-sm">{error}</p>
+          )}
+
+          <button
+            onClick={handleUpload}
+            disabled={uploading || selectedFiles.length === 0}
+            className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center"
+          >
+            {uploading ? (
+              'Uploading...'
+            ) : (
+              <>
+                <Upload className="w-5 h-5 mr-2" />
+                Upload {selectedFiles.length} Image{selectedFiles.length !== 1 ? 's' : ''}
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
