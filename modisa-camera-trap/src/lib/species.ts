@@ -23,6 +23,16 @@ export const SPECIES_LIST: Species[] = [
   { id: 'aardwolf', commonName: 'Aardwolf', scientificName: 'Proteles cristata', category: 'mammal' },
   { id: 'honey-badger', commonName: 'Honey Badger', scientificName: 'Mellivora capensis', category: 'mammal' },
   
+  // Small Carnivores / Viverrids
+  { id: 'common-genet', commonName: 'Common Genet', scientificName: 'Genetta genetta', category: 'mammal' },
+  { id: 'large-spotted-genet', commonName: 'Large-spotted Genet', scientificName: 'Genetta tigrina', category: 'mammal' },
+  { id: 'african-civet', commonName: 'African Civet', scientificName: 'Civettictis civetta', category: 'mammal' },
+  { id: 'striped-polecat', commonName: 'Striped Polecat', scientificName: 'Ictonyx striatus', category: 'mammal' },
+  { id: 'banded-mongoose', commonName: 'Banded Mongoose', scientificName: 'Mungos mungo', category: 'mammal' },
+  { id: 'suricate', commonName: 'Meerkat', scientificName: 'Suricata suricatta', category: 'mammal' },
+  { id: 'yellow-mongoose', commonName: 'Yellow Mongoose', scientificName: 'Cynictis penicillata', category: 'mammal' },
+  { id: 'slender-mongoose', commonName: 'Slender Mongoose', scientificName: 'Herpestes sanguineus', category: 'mammal' },
+  
   // Large Herbivores
   { id: 'gemsbok', commonName: 'Gemsbok', scientificName: 'Oryx gazella', category: 'mammal' },
   { id: 'eland', commonName: 'Eland', scientificName: 'Taurotragus oryx', category: 'mammal' },
@@ -42,9 +52,8 @@ export const SPECIES_LIST: Species[] = [
   { id: 'porcupine', commonName: 'Cape Porcupine', scientificName: 'Hystrix africaeaustralis', category: 'mammal' },
   { id: 'springhare', commonName: 'Springhare', scientificName: 'Pedetes capensis', category: 'mammal' },
   { id: 'ground-squirrel', commonName: 'Cape Ground Squirrel', scientificName: 'Geosciurus inauris', category: 'mammal' },
-  { id: 'suricate', commonName: 'Meerkat', scientificName: 'Suricata suricatta', category: 'mammal' },
-  { id: 'yellow-mongoose', commonName: 'Yellow Mongoose', scientificName: 'Cynictis penicillata', category: 'mammal' },
-  { id: 'slender-mongoose', commonName: 'Slender Mongoose', scientificName: 'Herpestes sanguineus', category: 'mammal' },
+  { id: 'scrub-hare', commonName: 'Scrub Hare', scientificName: 'Lepus saxatilis', category: 'mammal' },
+  { id: 'cape-hare', commonName: 'Cape Hare', scientificName: 'Lepus capensis', category: 'mammal' },
   
   // Birds
   { id: 'ostrich', commonName: 'Ostrich', scientificName: 'Struthio camelus', category: 'bird' },
@@ -53,6 +62,8 @@ export const SPECIES_LIST: Species[] = [
   { id: 'martial-eagle', commonName: 'Martial Eagle', scientificName: 'Polemaetus bellicosus', category: 'bird' },
   { id: 'lappet-faced-vulture', commonName: 'Lappet-faced Vulture', scientificName: 'Torgos tracheliotos', category: 'bird' },
   { id: 'southern-pale-chanting-goshawk', commonName: 'Southern Pale Chanting Goshawk', scientificName: 'Melierax canorus', category: 'bird' },
+  { id: 'spotted-eagle-owl', commonName: 'Spotted Eagle-Owl', scientificName: 'Bubo africanus', category: 'bird' },
+  { id: 'barn-owl', commonName: 'Barn Owl', scientificName: 'Tyto alba', category: 'bird' },
   
   // Reptiles
   { id: 'leopard-tortoise', commonName: 'Leopard Tortoise', scientificName: 'Stigmochelys pardalis', category: 'reptile' },
