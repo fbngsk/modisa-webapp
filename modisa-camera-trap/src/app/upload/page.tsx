@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { SPECIES, CAMERA_STATIONS } from '@/lib/species';
+import { SPECIES_LIST, CAMERA_STATIONS } from '@/lib/species';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
