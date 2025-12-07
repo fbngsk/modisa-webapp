@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'API key not configured' }, { status: 500 });
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     // Extract base64 data
     const base64Data = image.includes('base64,') ? image.split('base64,')[1] : image;
