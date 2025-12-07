@@ -1,691 +1,447 @@
-import { GoogleGenerativeAI, GenerativeModel, Part } from '@google/generative-ai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
-import { SPECIES_LIST } from '@/lib/species';
 
-// ============================================
-// CONFIGURATION
-// ============================================
-
+// Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
-const CONFIG = {
-  model: 'gemini-2.5-flash',
-  maxRetries: 2,
-  retryDelayMs: 1000,
-  temperature: 0.1,
-  highConfidence: 0.7,
-  lowConfidence: 0.4,
-  infraredPenalty: 0.15,
-  flashOnlyPenalty: 0.2,
-};
+// Species database for Kalahari region
+const KALAHARI_SPECIES = [
+  { id: 'aardvark', common_name: 'Aardvark', scientific_name: 'Orycteropus afer' },
+  { id: 'aardwolf', common_name: 'Aardwolf', scientific_name: 'Proteles cristata' },
+  { id: 'african_wildcat', common_name: 'African Wildcat', scientific_name: 'Felis lybica' },
+  { id: 'baboon', common_name: 'Chacma Baboon', scientific_name: 'Papio ursinus' },
+  { id: 'bat_eared_fox', common_name: 'Bat-eared Fox', scientific_name: 'Otocyon megalotis' },
+  { id: 'black_backed_jackal', common_name: 'Black-backed Jackal', scientific_name: 'Lupulella mesomelas' },
+  { id: 'brown_hyena', common_name: 'Brown Hyena', scientific_name: 'Parahyaena brunnea' },
+  { id: 'cape_fox', common_name: 'Cape Fox', scientific_name: 'Vulpes chama' },
+  { id: 'cape_hare', common_name: 'Cape Hare', scientific_name: 'Lepus capensis' },
+  { id: 'caracal', common_name: 'Caracal', scientific_name: 'Caracal caracal' },
+  { id: 'cheetah', common_name: 'Cheetah', scientific_name: 'Acinonyx jubatus' },
+  { id: 'common_genet', common_name: 'Common Genet', scientific_name: 'Genetta genetta' },
+  { id: 'duiker', common_name: 'Common Duiker', scientific_name: 'Sylvicapra grimmia' },
+  { id: 'eland', common_name: 'Eland', scientific_name: 'Taurotragus oryx' },
+  { id: 'elephant', common_name: 'African Elephant', scientific_name: 'Loxodonta africana' },
+  { id: 'gemsbok', common_name: 'Gemsbok', scientific_name: 'Oryx gazella' },
+  { id: 'giraffe', common_name: 'Giraffe', scientific_name: 'Giraffa camelopardalis' },
+  { id: 'ground_squirrel', common_name: 'Cape Ground Squirrel', scientific_name: 'Xerus inauris' },
+  { id: 'hartebeest', common_name: 'Red Hartebeest', scientific_name: 'Alcelaphus buselaphus' },
+  { id: 'hedgehog', common_name: 'Southern African Hedgehog', scientific_name: 'Atelerix frontalis' },
+  { id: 'honey_badger', common_name: 'Honey Badger', scientific_name: 'Mellivora capensis' },
+  { id: 'hornbill', common_name: 'Southern Yellow-billed Hornbill', scientific_name: 'Tockus leucomelas' },
+  { id: 'hyena_spotted', common_name: 'Spotted Hyena', scientific_name: 'Crocuta crocuta' },
+  { id: 'impala', common_name: 'Impala', scientific_name: 'Aepyceros melampus' },
+  { id: 'klipspringer', common_name: 'Klipspringer', scientific_name: 'Oreotragus oreotragus' },
+  { id: 'kudu', common_name: 'Greater Kudu', scientific_name: 'Tragelaphus strepsiceros' },
+  { id: 'leopard', common_name: 'Leopard', scientific_name: 'Panthera pardus' },
+  { id: 'lion', common_name: 'Lion', scientific_name: 'Panthera leo' },
+  { id: 'meerkat', common_name: 'Meerkat', scientific_name: 'Suricata suricatta' },
+  { id: 'mongoose_banded', common_name: 'Banded Mongoose', scientific_name: 'Mungos mungo' },
+  { id: 'mongoose_slender', common_name: 'Slender Mongoose', scientific_name: 'Herpestes sanguineus' },
+  { id: 'mongoose_yellow', common_name: 'Yellow Mongoose', scientific_name: 'Cynictis penicillata' },
+  { id: 'ostrich', common_name: 'Ostrich', scientific_name: 'Struthio camelus' },
+  { id: 'pangolin', common_name: 'Ground Pangolin', scientific_name: 'Smutsia temminckii' },
+  { id: 'porcupine', common_name: 'Cape Porcupine', scientific_name: 'Hystrix africaeaustralis' },
+  { id: 'python', common_name: 'Southern African Python', scientific_name: 'Python natalensis' },
+  { id: 'rabbit_riverine', common_name: 'Riverine Rabbit', scientific_name: 'Bunolagus monticularis' },
+  { id: 'secretary_bird', common_name: 'Secretarybird', scientific_name: 'Sagittarius serpentarius' },
+  { id: 'serval', common_name: 'Serval', scientific_name: 'Leptailurus serval' },
+  { id: 'springbok', common_name: 'Springbok', scientific_name: 'Antidorcas marsupialis' },
+  { id: 'springhare', common_name: 'Springhare', scientific_name: 'Pedetes capensis' },
+  { id: 'steenbok', common_name: 'Steenbok', scientific_name: 'Raphicerus campestris' },
+  { id: 'suricate', common_name: 'Suricate', scientific_name: 'Suricata suricatta' },
+  { id: 'warthog', common_name: 'Warthog', scientific_name: 'Phacochoerus africanus' },
+  { id: 'wildebeest', common_name: 'Blue Wildebeest', scientific_name: 'Connochaetes taurinus' },
+  { id: 'wild_dog', common_name: 'African Wild Dog', scientific_name: 'Lycaon pictus' },
+  { id: 'zebra', common_name: 'Plains Zebra', scientific_name: 'Equus quagga' },
+  { id: 'bird_other', common_name: 'Bird (Other)', scientific_name: 'Aves' },
+  { id: 'rodent_other', common_name: 'Rodent (Other)', scientific_name: 'Rodentia' },
+  { id: 'snake_other', common_name: 'Snake (Other)', scientific_name: 'Serpentes' },
+  { id: 'unknown', common_name: 'Unknown Species', scientific_name: 'Unknown' },
+  { id: 'empty', common_name: 'Empty/No Animal', scientific_name: 'N/A' },
+  { id: 'human', common_name: 'Human', scientific_name: 'Homo sapiens' },
+  { id: 'vehicle', common_name: 'Vehicle', scientific_name: 'N/A' },
+];
 
-// ============================================
-// TYPES
-// ============================================
-
-interface Stage1Data {
-  animal_present: boolean;
-  animal_count: number;
-  multiple_species: boolean;
-  image_type: 'daylight' | 'infrared' | 'flash';
-  image_quality: 'good' | 'moderate' | 'poor';
-  quality_issues: string[];
-  animal_visible_features: {
-    body_visible: boolean;
-    face_visible: boolean;
-    eye_shine: boolean;
-    approximate_size: 'small' | 'medium' | 'large' | 'unknown';
-    pattern_visible: 'spots' | 'stripes' | 'solid' | 'unclear' | 'none';
-    body_percentage_visible?: number;
-  };
-  proceed_to_identification: boolean;
-  stage1_confidence: number;
-  rejection_reason?: string;
-}
-
-interface Stage2Data {
-  species_id: string | null;
-  common_name: string | null;
-  scientific_name: string | null;
-  confidence: number;
-  reasoning: string;
-  identifying_features?: string[];
-  alternative_species: Array<{
-    species_id: string;
-    common_name: string;
-    confidence: number;
-  }>;
-  needs_review: boolean;
-  review_reason: string | null;
-}
-
-// ============================================
-// SPECIES REFERENCE
-// ============================================
-
-const speciesReference = SPECIES_LIST.map(s => 
-  `- ${s.id}: ${s.commonName} (${s.scientificName})`
-).join('\n');
-
-// ============================================
-// PROMPTS
-// ============================================
-
-const STAGE_1_PROMPT = `You are analyzing a camera trap image from the Kalahari Desert, Botswana.
-
-TASK: Assess this image for animal presence and quality. Do NOT identify species yet.
-
-COMMON SCENARIOS TO HANDLE:
-1. CLEAR ANIMAL: Full or partial body visible, identifiable shape
-2. PARTIAL ANIMAL: Only tail, leg, ear, or snout visible → animal_present: true, but may set proceed: false
-3. DISTANT ANIMAL: Very small in frame → note in quality_issues, likely proceed: false
-4. MOTION BLUR: Fast movement causing blur → note severity
-5. MULTIPLE ANIMALS: Count individuals, note if different species likely
-6. FALSE TRIGGER: Wind, shadows, vegetation, insects, sun glare → animal_present: false
-7. EMPTY FRAME: No animal despite trigger → animal_present: false
-
-INFRARED/NIGHT IMAGE RULES:
-- Eye shine alone is NOT sufficient for animal_present: true
-- Need body outline OR silhouette OR movement blur to confirm
-- Bright spots could be reflections from rocks/vegetation
-- Very dark images with only eyes: set proceed_to_identification: false
-
-MINIMUM REQUIREMENTS FOR proceed_to_identification: true:
-- At least 25-30% of animal body visible
-- Can distinguish general body shape (not just eyes)
-- Image not completely overexposed or underexposed
-- Animal large enough in frame (not just distant dots)
-
-RESPONSE FORMAT (JSON only):
-{
-  "animal_present": true/false,
-  "animal_count": 0-10,
-  "multiple_species": true/false,
-  "image_type": "daylight" | "infrared" | "flash",
-  "image_quality": "good" | "moderate" | "poor",
-  "quality_issues": ["list specific issues"],
-  "animal_visible_features": {
-    "body_visible": true/false,
-    "face_visible": true/false,
-    "eye_shine": true/false,
-    "approximate_size": "small" | "medium" | "large" | "unknown",
-    "pattern_visible": "spots" | "stripes" | "solid" | "unclear" | "none",
-    "body_percentage_visible": 0-100
-  },
-  "proceed_to_identification": true/false,
-  "stage1_confidence": 0.0-1.0,
-  "rejection_reason": "why not proceeding, if applicable"
-}
-
-CRITICAL: Respond with ONLY the JSON object. No markdown, no explanation, no text before or after.`;
-
-const STAGE_2_PROMPT = `You are identifying wildlife species from a camera trap image from the Kalahari Desert, Botswana.
-
-CONTEXT FROM IMAGE ANALYSIS:
-{stage1_context}
-
-KNOWN SPECIES IN THIS AREA (use these IDs):
-${speciesReference}
-
-IDENTIFICATION TASK: Determine which species is visible.
-
-KEY DISTINGUISHING FEATURES BY SPECIES:
-
-SMALL CARNIVORES:
-- Genet (African/Small-spotted): Long body, very long banded tail (longer than body), spotted pattern, pointed face, small (1-2kg)
-- African Wildcat: Cat-shaped, tabby/solid grey-brown, shorter tail, larger than genet
-- Civet: Larger than genet, banded/spotted pattern, shorter legs, mask-like face markings
-- Caracal: Distinctive ear tufts (black), solid tawny color, medium cat size, no spots
-
-MEDIUM CARNIVORES:
-- Honey Badger: Low stocky build, distinctive white stripe from head down back, dark legs
-- Aardwolf: Vertical stripes on body, pointed snout, mane along spine, hyena-like but smaller
-- Black-backed Jackal: Dog-like, dark saddle on back, bushy tail, pointed ears
-- Bat-eared Fox: Enormous ears (diagnostic), small body, dark legs, grey-brown fur
-
-HERBIVORES/OTHERS:
-- Scrub Hare: Long upright ears, sitting/hopping posture, brown, no tail visible
-- Springhare: Kangaroo-like posture, huge hind legs, long tail, hopping locomotion
-- Porcupine: Quills visible (white-tipped), stocky, waddles
-- Aardvark: Long snout, large ears, grey skin, digging posture
-
-BIRDS:
-- Secretary Bird: Very long legs, crest feathers, usually walking
-- Kori Bustard: Large ground bird, thick neck, grey-brown
-- Various owls: Round head, forward-facing eyes, nocturnal
-
-CONFIDENCE CALIBRATION (be conservative):
-- 0.85-1.0: Perfect daylight image, multiple diagnostic features clearly visible
-- 0.70-0.85: Good visibility, key features visible, high certainty
-- 0.50-0.70: Partial view OR infrared with clear silhouette, moderate certainty
-- 0.30-0.50: Limited features visible, educated guess
-- 0.00-0.30: Cannot reliably identify, set species_id to null
-
-NIGHT IMAGE ADJUSTMENTS:
-- Infrared images: Reduce your initial confidence by 0.15
-- Flash images with mainly eye shine: Maximum confidence 0.55
-- If only silhouette visible: Maximum confidence 0.60
-
-RESPONSE FORMAT (JSON only):
-{
-  "species_id": "id-from-list or null if unknown",
-  "common_name": "name or null",
-  "scientific_name": "scientific name or null",
-  "confidence": 0.0-1.0,
-  "reasoning": "specific features observed that led to identification",
-  "identifying_features": ["list", "of", "features", "seen"],
-  "alternative_species": [
-    {"species_id": "id", "common_name": "name", "confidence": 0.0-1.0}
-  ],
-  "needs_review": true/false,
-  "review_reason": "reason or null"
-}
-
-FORCED REVIEW TRIGGERS (set needs_review: true):
-- Confidence below 0.65
-- Species not in the provided list
-- Only 1-2 features visible
-- Animal partially out of frame (>40% cut off)
-- Significant motion blur
-- Alternative species within 0.15 confidence of primary
-
-CRITICAL: Respond with ONLY the JSON object. No markdown, no explanation, no text before or after.`;
-
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
-
-/**
- * Extract JSON from potentially messy LLM output
- */
-function extractJSON(text: string): object | null {
-  if (!text || typeof text !== 'string') return null;
+// Helper to find species by various identifiers
+function findSpecies(identifier: string): typeof KALAHARI_SPECIES[0] | null {
+  const normalized = identifier.toLowerCase().trim();
   
-  const trimmed = text.trim();
-  
-  // Pattern 1: Markdown code block
-  const markdownMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  if (markdownMatch?.[1]) {
-    try {
-      return JSON.parse(markdownMatch[1].trim());
-    } catch { /* continue */ }
-  }
-  
-  // Pattern 2: Raw JSON object
-  const jsonMatch = trimmed.match(/(\{[\s\S]*\})/);
-  if (jsonMatch?.[1]) {
-    try {
-      return JSON.parse(jsonMatch[1]);
-    } catch { /* continue */ }
-  }
-  
-  // Pattern 3: Direct parse
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Validate Stage 1 data structure
- */
-function validateStage1(data: unknown): Stage1Data | null {
-  if (!data || typeof data !== 'object') return null;
-  
-  const d = data as Record<string, unknown>;
-  
-  // Required boolean
-  if (typeof d.animal_present !== 'boolean') return null;
-  if (typeof d.proceed_to_identification !== 'boolean') return null;
-  
-  // Build validated object with defaults
-  const features = (d.animal_visible_features as Record<string, unknown>) || {};
-  
-  return {
-    animal_present: d.animal_present,
-    animal_count: typeof d.animal_count === 'number' ? d.animal_count : 0,
-    multiple_species: d.multiple_species === true,
-    image_type: ['daylight', 'infrared', 'flash'].includes(d.image_type as string) 
-      ? (d.image_type as 'daylight' | 'infrared' | 'flash') 
-      : 'daylight',
-    image_quality: ['good', 'moderate', 'poor'].includes(d.image_quality as string)
-      ? (d.image_quality as 'good' | 'moderate' | 'poor')
-      : 'moderate',
-    quality_issues: Array.isArray(d.quality_issues) ? d.quality_issues : [],
-    animal_visible_features: {
-      body_visible: features.body_visible === true,
-      face_visible: features.face_visible === true,
-      eye_shine: features.eye_shine === true,
-      approximate_size: ['small', 'medium', 'large', 'unknown'].includes(features.approximate_size as string)
-        ? (features.approximate_size as 'small' | 'medium' | 'large' | 'unknown')
-        : 'unknown',
-      pattern_visible: ['spots', 'stripes', 'solid', 'unclear', 'none'].includes(features.pattern_visible as string)
-        ? (features.pattern_visible as 'spots' | 'stripes' | 'solid' | 'unclear' | 'none')
-        : 'unclear',
-      body_percentage_visible: typeof features.body_percentage_visible === 'number' 
-        ? features.body_percentage_visible 
-        : undefined,
-    },
-    proceed_to_identification: d.proceed_to_identification,
-    stage1_confidence: typeof d.stage1_confidence === 'number' ? d.stage1_confidence : 0,
-    rejection_reason: typeof d.rejection_reason === 'string' ? d.rejection_reason : undefined,
-  };
-}
-
-/**
- * Validate Stage 2 data structure
- */
-function validateStage2(data: unknown): Stage2Data | null {
-  if (!data || typeof data !== 'object') return null;
-  
-  const d = data as Record<string, unknown>;
-  
-  // Required fields
-  if (typeof d.confidence !== 'number') return null;
-  if (typeof d.needs_review !== 'boolean') return null;
-  
-  // Parse alternatives
-  const alternatives: Stage2Data['alternative_species'] = [];
-  if (Array.isArray(d.alternative_species)) {
-    for (const alt of d.alternative_species) {
-      if (alt && typeof alt === 'object') {
-        const a = alt as Record<string, unknown>;
-        if (a.species_id && a.common_name && typeof a.confidence === 'number') {
-          alternatives.push({
-            species_id: String(a.species_id),
-            common_name: String(a.common_name),
-            confidence: a.confidence,
-          });
-        }
-      }
-    }
-  }
-  
-  return {
-    species_id: typeof d.species_id === 'string' ? d.species_id : null,
-    common_name: typeof d.common_name === 'string' ? d.common_name : null,
-    scientific_name: typeof d.scientific_name === 'string' ? d.scientific_name : null,
-    confidence: d.confidence,
-    reasoning: typeof d.reasoning === 'string' ? d.reasoning : '',
-    identifying_features: Array.isArray(d.identifying_features) ? d.identifying_features : undefined,
-    alternative_species: alternatives,
-    needs_review: d.needs_review,
-    review_reason: typeof d.review_reason === 'string' ? d.review_reason : null,
-  };
-}
-
-/**
- * Retry wrapper for Gemini API calls
- */
-async function generateWithRetry(
-  model: GenerativeModel,
-  content: (string | Part)[],
-  maxRetries: number = CONFIG.maxRetries
-): Promise<string> {
-  let lastError: Error | null = null;
-  
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const result = await model.generateContent(content);
-      const text = result.response.text();
-      
-      if (!text || text.trim().length === 0) {
-        throw new Error('Empty response from API');
-      }
-      
-      return text;
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-      
-      const isRetryable = 
-        lastError.message.includes('503') ||
-        lastError.message.includes('500') ||
-        lastError.message.includes('overloaded') ||
-        lastError.message.includes('DEADLINE_EXCEEDED') ||
-        lastError.message.includes('RESOURCE_EXHAUSTED');
-      
-      if (!isRetryable || attempt === maxRetries) {
-        throw lastError;
-      }
-      
-      const delay = CONFIG.retryDelayMs * Math.pow(2, attempt);
-      console.log(`Retry ${attempt + 1}/${maxRetries} after ${delay}ms...`);
-      await new Promise(r => setTimeout(r, delay));
-    }
-  }
-  
-  throw lastError || new Error('Max retries exceeded');
-}
-
-/**
- * Validate and find species in database
- */
-function validateSpecies(stage2Data: Stage2Data): Stage2Data {
-  if (!stage2Data.species_id) return stage2Data;
-  
-  // Try exact ID match
-  let validSpecies = SPECIES_LIST.find(s => s.id === stage2Data.species_id);
+  // Try exact ID match first
+  let match = KALAHARI_SPECIES.find(s => s.id === normalized);
+  if (match) return match;
   
   // Try common name match
-  if (!validSpecies && stage2Data.common_name) {
-    validSpecies = SPECIES_LIST.find(
-      s => s.commonName.toLowerCase() === stage2Data.common_name?.toLowerCase()
-    );
-    if (validSpecies) {
-      stage2Data.species_id = validSpecies.id;
-    }
-  }
+  match = KALAHARI_SPECIES.find(s => s.common_name.toLowerCase() === normalized);
+  if (match) return match;
   
   // Try scientific name match
-  if (!validSpecies && stage2Data.scientific_name) {
-    validSpecies = SPECIES_LIST.find(
-      s => s.scientificName.toLowerCase() === stage2Data.scientific_name?.toLowerCase()
-    );
-    if (validSpecies) {
-      stage2Data.species_id = validSpecies.id;
-      stage2Data.common_name = validSpecies.commonName;
+  match = KALAHARI_SPECIES.find(s => s.scientific_name.toLowerCase() === normalized);
+  if (match) return match;
+  
+  // Try partial matches
+  match = KALAHARI_SPECIES.find(s => 
+    s.id.includes(normalized) || 
+    normalized.includes(s.id) ||
+    s.common_name.toLowerCase().includes(normalized) ||
+    normalized.includes(s.common_name.toLowerCase())
+  );
+  if (match) return match;
+  
+  return null;
+}
+
+// Extract JSON from potentially wrapped response
+function extractJSON(text: string): any {
+  // Try direct parse first
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    // Continue to extraction methods
+  }
+  
+  // Try to find JSON in markdown code blocks
+  const jsonBlockMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+  if (jsonBlockMatch) {
+    try {
+      return JSON.parse(jsonBlockMatch[1]);
+    } catch (e) {
+      // Continue
     }
   }
   
-  // No match found
-  if (!validSpecies) {
-    stage2Data.needs_review = true;
-    stage2Data.review_reason = `Species "${stage2Data.common_name || stage2Data.species_id}" not in database`;
-  }
-  
-  return stage2Data;
-}
-
-/**
- * Apply confidence adjustments based on image type
- */
-function adjustConfidence(
-  confidence: number, 
-  imageType: string, 
-  features: Stage1Data['animal_visible_features']
-): number {
-  let adjusted = confidence;
-  
-  if (imageType === 'infrared') {
-    adjusted -= CONFIG.infraredPenalty;
-  }
-  
-  if (imageType === 'flash' && features.eye_shine && !features.body_visible) {
-    adjusted = Math.min(adjusted, 0.55);
-  }
-  
-  if (!features.face_visible && features.body_visible && imageType !== 'daylight') {
-    adjusted = Math.min(adjusted, 0.60);
-  }
-  
-  return Math.max(0, Math.min(1, adjusted));
-}
-
-/**
- * Build context string for Stage 2
- */
-function buildStage1Context(stage1: Stage1Data): string {
-  const features = stage1.animal_visible_features;
-  
-  return `
-- Animal count: ${stage1.animal_count}
-- Multiple species likely: ${stage1.multiple_species}
-- Image type: ${stage1.image_type}
-- Image quality: ${stage1.image_quality}
-- Quality issues: ${stage1.quality_issues.join(', ') || 'none'}
-- Body visible: ${features.body_visible}
-- Face visible: ${features.face_visible}
-- Eye shine: ${features.eye_shine}
-- Approximate size: ${features.approximate_size}
-- Pattern: ${features.pattern_visible}
-- Body percentage visible: ${features.body_percentage_visible || 'unknown'}%
-- Stage 1 confidence: ${stage1.stage1_confidence}`.trim();
-}
-
-/**
- * Structured logging for debugging
- */
-function logIdentification(
-  stage1Raw: string,
-  stage1Data: Stage1Data | null,
-  stage2Raw: string | null,
-  stage2Data: Stage2Data | null,
-  needsReview: boolean
-) {
-  if (process.env.NODE_ENV === 'development' || needsReview) {
-    console.log('\n========== IDENTIFICATION LOG ==========');
-    console.log('Timestamp:', new Date().toISOString());
-    console.log('\n--- Stage 1 Raw (first 800 chars) ---');
-    console.log(stage1Raw.substring(0, 800));
-    console.log('\n--- Stage 1 Parsed ---');
-    console.log(JSON.stringify(stage1Data, null, 2));
-    
-    if (stage2Raw) {
-      console.log('\n--- Stage 2 Raw (first 800 chars) ---');
-      console.log(stage2Raw.substring(0, 800));
-      console.log('\n--- Stage 2 Parsed ---');
-      console.log(JSON.stringify(stage2Data, null, 2));
+  // Try to find JSON in generic code blocks
+  const codeBlockMatch = text.match(/```\s*([\s\S]*?)\s*```/);
+  if (codeBlockMatch) {
+    try {
+      return JSON.parse(codeBlockMatch[1]);
+    } catch (e) {
+      // Continue
     }
-    
-    console.log('\n--- Needs Review:', needsReview, '---');
-    console.log('==========================================\n');
   }
+  
+  // Try to find raw JSON object
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      // Continue
+    }
+  }
+  
+  throw new Error(`Could not extract JSON from response: ${text.substring(0, 200)}`);
 }
 
-// ============================================
-// MAIN API HANDLER
-// ============================================
+// Validate Stage 1 response
+function validateStage1(data: any): { 
+  image_type: string; 
+  quality_score: number; 
+  has_animal: boolean; 
+  proceed_to_identification: boolean;
+  animal_visible_percentage?: number;
+  rejection_reason?: string;
+} {
+  return {
+    image_type: data.image_type || 'unknown',
+    quality_score: typeof data.quality_score === 'number' ? data.quality_score : 0.5,
+    has_animal: Boolean(data.has_animal),
+    proceed_to_identification: Boolean(data.proceed_to_identification),
+    animal_visible_percentage: data.animal_visible_percentage,
+    rejection_reason: data.rejection_reason,
+  };
+}
+
+// Validate Stage 2 response
+function validateStage2(data: any): {
+  species_id: string;
+  common_name: string;
+  scientific_name: string;
+  confidence: number;
+  identifying_features: string[];
+  behavior_observed: string;
+  count: number;
+  needs_review: boolean;
+  review_reason?: string;
+  alternative_species?: Array<{ species_id: string; confidence: number }>;
+} {
+  return {
+    species_id: data.species_id || 'unknown',
+    common_name: data.common_name || 'Unknown',
+    scientific_name: data.scientific_name || 'Unknown',
+    confidence: typeof data.confidence === 'number' ? Math.min(1, Math.max(0, data.confidence)) : 0.5,
+    identifying_features: Array.isArray(data.identifying_features) ? data.identifying_features : [],
+    behavior_observed: data.behavior_observed || 'Unknown',
+    count: typeof data.count === 'number' ? data.count : 1,
+    needs_review: Boolean(data.needs_review),
+    review_reason: data.review_reason,
+    alternative_species: Array.isArray(data.alternative_species) ? data.alternative_species : [],
+  };
+}
+
+// Stage 1: Image Analysis
+async function analyzeImage(model: any, imageData: string, mimeType: string): Promise<ReturnType<typeof validateStage1>> {
+  const prompt = `You are analyzing a camera trap image from the Kalahari region of Botswana for the Modisa Wildlife Project.
+
+TASK: Analyze the image quality and determine if animal identification is possible.
+
+CRITICAL RULES FOR CAMERA TRAP IMAGES:
+1. Infrared/night images often show only partial animals or eye shine - be conservative
+2. Motion blur is common - if features are indistinguishable, mark as not identifiable
+3. Partial animals (tail only, ear only, distant silhouette) should NOT proceed to identification
+4. "Eye shine" alone (glowing eyes in darkness) is NOT sufficient for identification
+5. Flash photos may wash out features - account for this
+
+IMAGE TYPE DEFINITIONS:
+- "daylight": Natural light, full color
+- "infrared": Night vision, typically grayscale/greenish with possible eye shine
+- "flash": Night photo with flash, may have washed-out areas
+- "dusk_dawn": Low light transitional period
+
+MINIMUM REQUIREMENTS TO PROCEED:
+- At least 25-30% of the animal's body must be visible
+- Key identifying features (head shape, body pattern, or distinctive markings) must be somewhat distinguishable
+- Image quality must allow differentiation between similar species
+
+Return ONLY valid JSON (no markdown, no explanation):
+{
+  "image_type": "daylight|infrared|flash|dusk_dawn",
+  "quality_score": 0.0-1.0,
+  "has_animal": true/false,
+  "animal_visible_percentage": 0-100,
+  "proceed_to_identification": true/false,
+  "rejection_reason": "reason if not proceeding, null otherwise"
+}`;
+
+  const result = await model.generateContent([
+    { text: prompt },
+    { inlineData: { mimeType, data: imageData } }
+  ]);
+  
+  const response = result.response.text();
+  const parsed = extractJSON(response);
+  return validateStage1(parsed);
+}
+
+// Stage 2: Species Identification
+async function identifySpecies(model: any, imageData: string, mimeType: string, stage1: ReturnType<typeof validateStage1>): Promise<ReturnType<typeof validateStage2>> {
+  const speciesList = KALAHARI_SPECIES.map(s => `- ${s.id}: ${s.common_name} (${s.scientific_name})`).join('\n');
+  
+  const prompt = `You are identifying wildlife in a camera trap image from the Kalahari, Botswana.
+
+IMAGE CONTEXT:
+- Type: ${stage1.image_type}
+- Quality: ${stage1.quality_score}
+- Animal visibility: approximately ${stage1.animal_visible_percentage || 'unknown'}%
+
+SPECIES DATABASE (use exact species_id values):
+${speciesList}
+
+IDENTIFICATION RULES:
+
+1. DISTINGUISHING SIMILAR SPECIES:
+   - Genet vs African Wildcat: Genet has LONG banded tail, spotted body; Wildcat has shorter striped tail
+   - Caracal vs African Wildcat: Caracal has distinctive EAR TUFTS and larger size
+   - Cape Fox vs Bat-eared Fox: Bat-eared fox has HUGE distinctive ears
+   - Black-backed Jackal vs Cape Fox: Jackal has black saddle marking on back
+   - Brown Hyena vs Spotted Hyena: Brown has long shaggy coat, pointed ears; Spotted has rounded ears, spots
+
+2. CONFIDENCE CALIBRATION:
+   - 0.85-1.0: Perfect daylight image, all key features clearly visible
+   - 0.70-0.85: Good image, most features visible, high certainty
+   - 0.55-0.70: Decent image OR infrared with clear features
+   - 0.40-0.55: Challenging image, educated guess based on partial features
+   - Below 0.40: Should trigger needs_review=true
+
+3. NIGHT/INFRARED IMAGE ADJUSTMENTS:
+   - Reduce confidence by 0.10-0.15 for infrared images
+   - Eye shine pattern can help but is not definitive
+   - Body shape and size become more important than color/pattern
+
+4. WHEN TO FLAG FOR REVIEW (needs_review=true):
+   - Confidence below 0.65
+   - Alternative species within 0.15 confidence of primary
+   - Unusual behavior or appearance
+   - Partial visibility affecting certainty
+
+Return ONLY valid JSON:
+{
+  "species_id": "exact_id_from_list",
+  "common_name": "Common Name",
+  "scientific_name": "Scientific name",
+  "confidence": 0.0-1.0,
+  "identifying_features": ["feature1", "feature2"],
+  "behavior_observed": "standing|walking|running|feeding|resting|hunting|unknown",
+  "count": 1,
+  "needs_review": true/false,
+  "review_reason": "reason if needs_review is true",
+  "alternative_species": [{"species_id": "id", "confidence": 0.0-1.0}]
+}`;
+
+  const result = await model.generateContent([
+    { text: prompt },
+    { inlineData: { mimeType, data: imageData } }
+  ]);
+  
+  const response = result.response.text();
+  console.log('Stage 2 raw response:', response.substring(0, 500));
+  
+  const parsed = extractJSON(response);
+  const validated = validateStage2(parsed);
+  
+  // Adjust confidence based on image type
+  if (stage1.image_type === 'infrared') {
+    validated.confidence = Math.max(0, validated.confidence - 0.15);
+  } else if (stage1.image_type === 'flash') {
+    validated.confidence = Math.min(validated.confidence, 0.75);
+  }
+  
+  // Validate species exists in database
+  const species = findSpecies(validated.species_id);
+  if (species) {
+    validated.species_id = species.id;
+    validated.common_name = species.common_name;
+    validated.scientific_name = species.scientific_name;
+  } else {
+    console.warn(`Species not found in database: ${validated.species_id}`);
+    validated.needs_review = true;
+    validated.review_reason = `Species "${validated.species_id}" not in database`;
+  }
+  
+  // Force review for low confidence
+  if (validated.confidence < 0.65 && !validated.needs_review) {
+    validated.needs_review = true;
+    validated.review_reason = 'Low confidence identification';
+  }
+  
+  return validated;
+}
 
 export async function POST(request: NextRequest) {
-  let stage1Raw = '';
-  let stage1Data: Stage1Data | null = null;
-  let stage2Raw: string | null = null;
-  let stage2Data: Stage2Data | null = null;
-  
   try {
-    // ===== INPUT VALIDATION =====
+    // Parse request body
     const body = await request.json();
-    const { image } = body;
-
-    if (!image || typeof image !== 'string') {
+    
+    // ============================================
+    // FIX: Accept both "imageBase64" and "image"
+    // ============================================
+    const imageData = body.imageBase64 || body.image;
+    
+    if (!imageData || typeof imageData !== 'string') {
       return NextResponse.json(
         { success: false, error: 'No image provided or invalid format' },
         { status: 400 }
       );
     }
-
+    
+    // Validate base64 image format
+    const base64Match = imageData.match(/^data:image\/(jpeg|jpg|png|webp);base64,(.+)$/);
+    if (!base64Match) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid image format. Expected base64 data URL.' },
+        { status: 400 }
+      );
+    }
+    
+    const mimeType = `image/${base64Match[1] === 'jpg' ? 'jpeg' : base64Match[1]}`;
+    const base64Data = base64Match[2];
+    
+    // Check API key
     if (!process.env.GEMINI_API_KEY) {
       console.error('GEMINI_API_KEY not configured');
       return NextResponse.json(
-        { success: false, error: 'API key not configured' },
+        { success: false, error: 'API configuration error' },
         { status: 500 }
       );
     }
-
-    // ===== SETUP MODEL =====
-    const model = genAI.getGenerativeModel({
-      model: CONFIG.model,
+    
+    // Initialize model with specific settings
+    const model = genAI.getGenerativeModel({ 
+      model: 'gemini-1.5-flash',
       generationConfig: {
+        temperature: 0.1,
+        topP: 0.8,
+        maxOutputTokens: 1024,
         responseMimeType: 'application/json',
-        temperature: CONFIG.temperature,
-      },
+      }
     });
-
-    // ===== PREPARE IMAGE =====
-    const base64Data = image.includes('base64,') 
-      ? image.split('base64,')[1] 
-      : image;
     
-    const mimeType = image.includes('data:')
-      ? image.split(';')[0].split(':')[1]
-      : 'image/jpeg';
-
-    const imagePart: Part = {
-      inlineData: {
-        data: base64Data,
-        mimeType: mimeType,
-      },
-    };
-
-    // ===== STAGE 1: Image Analysis =====
-    stage1Raw = await generateWithRetry(model, [STAGE_1_PROMPT, imagePart]);
+    // Stage 1: Analyze image
+    console.log('Starting Stage 1: Image Analysis');
+    const stage1Result = await analyzeImage(model, base64Data, mimeType);
+    console.log('Stage 1 result:', stage1Result);
     
-    const stage1Extracted = extractJSON(stage1Raw);
-    if (!stage1Extracted) {
-      logIdentification(stage1Raw, null, null, null, true);
-      return NextResponse.json({
-        success: false,
-        error: 'Failed to parse image analysis',
-        stage: 1,
-        needs_review: true,
-      });
-    }
-
-    stage1Data = validateStage1(stage1Extracted);
-    if (!stage1Data) {
-      logIdentification(stage1Raw, null, null, null, true);
-      return NextResponse.json({
-        success: false,
-        error: 'Invalid image analysis structure',
-        stage: 1,
-        needs_review: true,
-      });
-    }
-
-    // ===== CHECK IF PROCEED TO STAGE 2 =====
-    if (!stage1Data.proceed_to_identification) {
-      logIdentification(stage1Raw, stage1Data, null, null, stage1Data.animal_present);
-      
+    // If no animal or can't identify, return early
+    if (!stage1Result.has_animal) {
       return NextResponse.json({
         success: true,
-        stage1: stage1Data,
-        species: null,
-        needs_review: stage1Data.animal_present,
-        review_reason: stage1Data.rejection_reason || 
-          (stage1Data.animal_present 
-            ? 'Image quality insufficient for reliable identification'
-            : 'No animal detected in image'),
-        confidence: 0,
+        result: {
+          species_id: 'empty',
+          common_name: 'Empty/No Animal',
+          scientific_name: 'N/A',
+          confidence: stage1Result.quality_score,
+          identifying_features: [],
+          behavior_observed: 'none',
+          count: 0,
+          needs_review: false,
+          image_analysis: stage1Result,
+        }
       });
     }
-
-    // ===== STAGE 2: Species Identification =====
-    const stage1Context = buildStage1Context(stage1Data);
-    const stage2Prompt = STAGE_2_PROMPT.replace('{stage1_context}', stage1Context);
-
-    stage2Raw = await generateWithRetry(model, [stage2Prompt, imagePart]);
-
-    const stage2Extracted = extractJSON(stage2Raw);
-    if (!stage2Extracted) {
-      logIdentification(stage1Raw, stage1Data, stage2Raw, null, true);
-      return NextResponse.json({
-        success: true,
-        stage1: stage1Data,
-        species: null,
-        needs_review: true,
-        review_reason: 'Species identification response parsing failed',
-        confidence: 0,
-      });
-    }
-
-    stage2Data = validateStage2(stage2Extracted);
-    if (!stage2Data) {
-      logIdentification(stage1Raw, stage1Data, stage2Raw, null, true);
-      return NextResponse.json({
-        success: true,
-        stage1: stage1Data,
-        species: null,
-        needs_review: true,
-        review_reason: 'Invalid identification structure',
-        confidence: 0,
-      });
-    }
-
-    // ===== POST-PROCESSING =====
     
-    // Validate species against database
-    stage2Data = validateSpecies(stage2Data);
-
-    // Store raw confidence before adjustment
-    const rawConfidence = stage2Data.confidence;
-
-    // Adjust confidence based on image conditions
-    stage2Data.confidence = adjustConfidence(
-      stage2Data.confidence,
-      stage1Data.image_type,
-      stage1Data.animal_visible_features
-    );
-
-    // Force review if confidence dropped below threshold
-    if (stage2Data.confidence < CONFIG.highConfidence && !stage2Data.needs_review) {
-      stage2Data.needs_review = true;
-      stage2Data.review_reason = stage2Data.review_reason || 
-        `Confidence ${stage2Data.confidence.toFixed(2)} below threshold`;
+    if (!stage1Result.proceed_to_identification) {
+      return NextResponse.json({
+        success: true,
+        result: {
+          species_id: 'unknown',
+          common_name: 'Unknown - Poor Image Quality',
+          scientific_name: 'Unknown',
+          confidence: 0,
+          identifying_features: [],
+          behavior_observed: 'unknown',
+          count: 1,
+          needs_review: true,
+          review_reason: stage1Result.rejection_reason || 'Image quality insufficient for identification',
+          image_analysis: stage1Result,
+        }
+      });
     }
-
-    // Check if alternatives are too close in confidence
-    const topAlternative = stage2Data.alternative_species[0];
-    if (topAlternative && 
-        stage2Data.confidence - topAlternative.confidence < 0.15 &&
-        !stage2Data.needs_review) {
-      stage2Data.needs_review = true;
-      stage2Data.review_reason = `Close alternative: ${topAlternative.common_name} (${topAlternative.confidence.toFixed(2)})`;
-    }
-
-    // ===== LOG AND RESPOND =====
-    logIdentification(stage1Raw, stage1Data, stage2Raw, stage2Data, stage2Data.needs_review);
-
+    
+    // Stage 2: Identify species
+    console.log('Starting Stage 2: Species Identification');
+    const stage2Result = await identifySpecies(model, base64Data, mimeType, stage1Result);
+    console.log('Stage 2 result:', stage2Result);
+    
     return NextResponse.json({
       success: true,
-      stage1: stage1Data,
-      species: stage2Data.species_id,
-      common_name: stage2Data.common_name,
-      scientific_name: stage2Data.scientific_name,
-      confidence: stage2Data.confidence,
-      confidence_raw: rawConfidence,
-      reasoning: stage2Data.reasoning,
-      identifying_features: stage2Data.identifying_features,
-      alternatives: stage2Data.alternative_species,
-      needs_review: stage2Data.needs_review,
-      review_reason: stage2Data.review_reason,
+      result: {
+        ...stage2Result,
+        image_analysis: stage1Result,
+      }
     });
-
+    
   } catch (error) {
     console.error('Identification error:', error);
     
-    logIdentification(
-      stage1Raw || 'N/A',
-      stage1Data,
-      stage2Raw,
-      stage2Data,
-      true
-    );
-
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     
-    const isRateLimit = 
-      errorMessage.includes('429') || 
-      errorMessage.includes('quota') ||
-      errorMessage.includes('RESOURCE_EXHAUSTED');
+    // Check for specific Gemini errors
+    if (errorMessage.includes('API key')) {
+      return NextResponse.json(
+        { success: false, error: 'API key configuration error' },
+        { status: 500 }
+      );
+    }
     
-    const isTimeout =
-      errorMessage.includes('DEADLINE_EXCEEDED') ||
-      errorMessage.includes('timeout');
-
+    if (errorMessage.includes('quota') || errorMessage.includes('rate')) {
+      return NextResponse.json(
+        { success: false, error: 'API rate limit reached. Please try again later.' },
+        { status: 429 }
+      );
+    }
+    
     return NextResponse.json(
-      {
-        success: false,
-        error: isRateLimit 
-          ? 'Rate limit exceeded. Please try again in a few minutes.'
-          : isTimeout
-          ? 'Request timed out. Please try again.'
-          : 'Identification failed',
-        retryable: isRateLimit || isTimeout,
-        needs_review: true,
-        stage1: stage1Data,
-      },
-      { status: isRateLimit ? 429 : 500 }
+      { success: false, error: `Identification failed: ${errorMessage}` },
+      { status: 500 }
     );
   }
 }
