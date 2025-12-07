@@ -216,10 +216,10 @@ export default function UploadPage() {
     }
   };
 
-  const getSpeciesName = (id: string): string => {
-    const species = SPECIES.find(s => s.id === id);
-    return species?.commonName || id;
-  };
+const getSpeciesName = (id: string): string => {
+  const species = SPECIES_LIST.find(s => s.id === id);
+  return species?.commonName || id;
+};
 
   const getStatusBadge = (image: ImageFile, index: number) => {
     switch (image.status) {
