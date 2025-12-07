@@ -1,6 +1,5 @@
 import { GoogleGenerativeAI, GenerativeModel, Part } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
 import { SPECIES_LIST } from '@/lib/species';
 
 // ============================================
@@ -14,56 +13,51 @@ const CONFIG = {
   maxRetries: 2,
   retryDelayMs: 1000,
   temperature: 0.1,
-  // Confidence thresholds
   highConfidence: 0.7,
   lowConfidence: 0.4,
-  // Night image penalty
   infraredPenalty: 0.15,
   flashOnlyPenalty: 0.2,
 };
 
 // ============================================
-// VALIDATION SCHEMAS
+// TYPES
 // ============================================
 
-const Stage1Schema = z.object({
-  animal_present: z.boolean(),
-  animal_count: z.number().int().min(0).default(0),
-  multiple_species: z.boolean().default(false),
-  image_type: z.enum(['daylight', 'infrared', 'flash']).default('daylight'),
-  image_quality: z.enum(['good', 'moderate', 'poor']).default('moderate'),
-  quality_issues: z.array(z.string()).default([]),
-  animal_visible_features: z.object({
-    body_visible: z.boolean().default(false),
-    face_visible: z.boolean().default(false),
-    eye_shine: z.boolean().default(false),
-    approximate_size: z.enum(['small', 'medium', 'large', 'unknown']).default('unknown'),
-    pattern_visible: z.enum(['spots', 'stripes', 'solid', 'unclear', 'none']).default('unclear'),
-    body_percentage_visible: z.number().min(0).max(100).optional(),
-  }).default({}),
-  proceed_to_identification: z.boolean(),
-  stage1_confidence: z.number().min(0).max(1).default(0),
-  rejection_reason: z.string().optional(),
-});
+interface Stage1Data {
+  animal_present: boolean;
+  animal_count: number;
+  multiple_species: boolean;
+  image_type: 'daylight' | 'infrared' | 'flash';
+  image_quality: 'good' | 'moderate' | 'poor';
+  quality_issues: string[];
+  animal_visible_features: {
+    body_visible: boolean;
+    face_visible: boolean;
+    eye_shine: boolean;
+    approximate_size: 'small' | 'medium' | 'large' | 'unknown';
+    pattern_visible: 'spots' | 'stripes' | 'solid' | 'unclear' | 'none';
+    body_percentage_visible?: number;
+  };
+  proceed_to_identification: boolean;
+  stage1_confidence: number;
+  rejection_reason?: string;
+}
 
-const Stage2Schema = z.object({
-  species_id: z.string().nullable(),
-  common_name: z.string().nullable(),
-  scientific_name: z.string().nullable(),
-  confidence: z.number().min(0).max(1),
-  reasoning: z.string(),
-  identifying_features: z.array(z.string()).optional(),
-  alternative_species: z.array(z.object({
-    species_id: z.string(),
-    common_name: z.string(),
-    confidence: z.number().min(0).max(1),
-  })).default([]),
-  needs_review: z.boolean(),
-  review_reason: z.string().nullable(),
-});
-
-type Stage1Data = z.infer<typeof Stage1Schema>;
-type Stage2Data = z.infer<typeof Stage2Schema>;
+interface Stage2Data {
+  species_id: string | null;
+  common_name: string | null;
+  scientific_name: string | null;
+  confidence: number;
+  reasoning: string;
+  identifying_features?: string[];
+  alternative_species: Array<{
+    species_id: string;
+    common_name: string;
+    confidence: number;
+  }>;
+  needs_review: boolean;
+  review_reason: string | null;
+}
 
 // ============================================
 // SPECIES REFERENCE
@@ -234,6 +228,94 @@ function extractJSON(text: string): object | null {
 }
 
 /**
+ * Validate Stage 1 data structure
+ */
+function validateStage1(data: unknown): Stage1Data | null {
+  if (!data || typeof data !== 'object') return null;
+  
+  const d = data as Record<string, unknown>;
+  
+  // Required boolean
+  if (typeof d.animal_present !== 'boolean') return null;
+  if (typeof d.proceed_to_identification !== 'boolean') return null;
+  
+  // Build validated object with defaults
+  const features = (d.animal_visible_features as Record<string, unknown>) || {};
+  
+  return {
+    animal_present: d.animal_present,
+    animal_count: typeof d.animal_count === 'number' ? d.animal_count : 0,
+    multiple_species: d.multiple_species === true,
+    image_type: ['daylight', 'infrared', 'flash'].includes(d.image_type as string) 
+      ? (d.image_type as 'daylight' | 'infrared' | 'flash') 
+      : 'daylight',
+    image_quality: ['good', 'moderate', 'poor'].includes(d.image_quality as string)
+      ? (d.image_quality as 'good' | 'moderate' | 'poor')
+      : 'moderate',
+    quality_issues: Array.isArray(d.quality_issues) ? d.quality_issues : [],
+    animal_visible_features: {
+      body_visible: features.body_visible === true,
+      face_visible: features.face_visible === true,
+      eye_shine: features.eye_shine === true,
+      approximate_size: ['small', 'medium', 'large', 'unknown'].includes(features.approximate_size as string)
+        ? (features.approximate_size as 'small' | 'medium' | 'large' | 'unknown')
+        : 'unknown',
+      pattern_visible: ['spots', 'stripes', 'solid', 'unclear', 'none'].includes(features.pattern_visible as string)
+        ? (features.pattern_visible as 'spots' | 'stripes' | 'solid' | 'unclear' | 'none')
+        : 'unclear',
+      body_percentage_visible: typeof features.body_percentage_visible === 'number' 
+        ? features.body_percentage_visible 
+        : undefined,
+    },
+    proceed_to_identification: d.proceed_to_identification,
+    stage1_confidence: typeof d.stage1_confidence === 'number' ? d.stage1_confidence : 0,
+    rejection_reason: typeof d.rejection_reason === 'string' ? d.rejection_reason : undefined,
+  };
+}
+
+/**
+ * Validate Stage 2 data structure
+ */
+function validateStage2(data: unknown): Stage2Data | null {
+  if (!data || typeof data !== 'object') return null;
+  
+  const d = data as Record<string, unknown>;
+  
+  // Required fields
+  if (typeof d.confidence !== 'number') return null;
+  if (typeof d.needs_review !== 'boolean') return null;
+  
+  // Parse alternatives
+  const alternatives: Stage2Data['alternative_species'] = [];
+  if (Array.isArray(d.alternative_species)) {
+    for (const alt of d.alternative_species) {
+      if (alt && typeof alt === 'object') {
+        const a = alt as Record<string, unknown>;
+        if (a.species_id && a.common_name && typeof a.confidence === 'number') {
+          alternatives.push({
+            species_id: String(a.species_id),
+            common_name: String(a.common_name),
+            confidence: a.confidence,
+          });
+        }
+      }
+    }
+  }
+  
+  return {
+    species_id: typeof d.species_id === 'string' ? d.species_id : null,
+    common_name: typeof d.common_name === 'string' ? d.common_name : null,
+    scientific_name: typeof d.scientific_name === 'string' ? d.scientific_name : null,
+    confidence: d.confidence,
+    reasoning: typeof d.reasoning === 'string' ? d.reasoning : '',
+    identifying_features: Array.isArray(d.identifying_features) ? d.identifying_features : undefined,
+    alternative_species: alternatives,
+    needs_review: d.needs_review,
+    review_reason: typeof d.review_reason === 'string' ? d.review_reason : null,
+  };
+}
+
+/**
  * Retry wrapper for Gemini API calls
  */
 async function generateWithRetry(
@@ -267,7 +349,6 @@ async function generateWithRetry(
         throw lastError;
       }
       
-      // Exponential backoff
       const delay = CONFIG.retryDelayMs * Math.pow(2, attempt);
       console.log(`Retry ${attempt + 1}/${maxRetries} after ${delay}ms...`);
       await new Promise(r => setTimeout(r, delay));
@@ -319,25 +400,25 @@ function validateSpecies(stage2Data: Stage2Data): Stage2Data {
 /**
  * Apply confidence adjustments based on image type
  */
-function adjustConfidence(confidence: number, imageType: string, features: Stage1Data['animal_visible_features']): number {
+function adjustConfidence(
+  confidence: number, 
+  imageType: string, 
+  features: Stage1Data['animal_visible_features']
+): number {
   let adjusted = confidence;
   
-  // Night image penalties
   if (imageType === 'infrared') {
     adjusted -= CONFIG.infraredPenalty;
   }
   
-  // Eye shine only penalty
   if (imageType === 'flash' && features.eye_shine && !features.body_visible) {
     adjusted = Math.min(adjusted, 0.55);
   }
   
-  // Silhouette only cap
   if (!features.face_visible && features.body_visible && imageType !== 'daylight') {
     adjusted = Math.min(adjusted, 0.60);
   }
   
-  // Ensure bounds
   return Math.max(0, Math.min(1, adjusted));
 }
 
@@ -458,25 +539,19 @@ export async function POST(request: NextRequest) {
         error: 'Failed to parse image analysis',
         stage: 1,
         needs_review: true,
-        raw_response: process.env.NODE_ENV === 'development' ? stage1Raw : undefined,
       });
     }
 
-    // Validate Stage 1 schema
-    const stage1Parsed = Stage1Schema.safeParse(stage1Extracted);
-    if (!stage1Parsed.success) {
-      console.error('Stage 1 validation error:', stage1Parsed.error.errors);
+    stage1Data = validateStage1(stage1Extracted);
+    if (!stage1Data) {
       logIdentification(stage1Raw, null, null, null, true);
       return NextResponse.json({
         success: false,
         error: 'Invalid image analysis structure',
         stage: 1,
         needs_review: true,
-        validation_errors: stage1Parsed.error.errors,
       });
     }
-    
-    stage1Data = stage1Parsed.data;
 
     // ===== CHECK IF PROCEED TO STAGE 2 =====
     if (!stage1Data.proceed_to_identification) {
@@ -486,7 +561,7 @@ export async function POST(request: NextRequest) {
         success: true,
         stage1: stage1Data,
         species: null,
-        needs_review: stage1Data.animal_present, // Review if animal present but couldn't proceed
+        needs_review: stage1Data.animal_present,
         review_reason: stage1Data.rejection_reason || 
           (stage1Data.animal_present 
             ? 'Image quality insufficient for reliable identification'
@@ -514,10 +589,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Validate Stage 2 schema
-    const stage2Parsed = Stage2Schema.safeParse(stage2Extracted);
-    if (!stage2Parsed.success) {
-      console.error('Stage 2 validation error:', stage2Parsed.error.errors);
+    stage2Data = validateStage2(stage2Extracted);
+    if (!stage2Data) {
       logIdentification(stage1Raw, stage1Data, stage2Raw, null, true);
       return NextResponse.json({
         success: true,
@@ -529,26 +602,26 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    stage2Data = stage2Parsed.data;
-
     // ===== POST-PROCESSING =====
     
     // Validate species against database
     stage2Data = validateSpecies(stage2Data);
 
+    // Store raw confidence before adjustment
+    const rawConfidence = stage2Data.confidence;
+
     // Adjust confidence based on image conditions
-    const adjustedConfidence = adjustConfidence(
+    stage2Data.confidence = adjustConfidence(
       stage2Data.confidence,
       stage1Data.image_type,
       stage1Data.animal_visible_features
     );
-    stage2Data.confidence = adjustedConfidence;
 
     // Force review if confidence dropped below threshold
-    if (adjustedConfidence < CONFIG.highConfidence && !stage2Data.needs_review) {
+    if (stage2Data.confidence < CONFIG.highConfidence && !stage2Data.needs_review) {
       stage2Data.needs_review = true;
       stage2Data.review_reason = stage2Data.review_reason || 
-        `Confidence ${adjustedConfidence.toFixed(2)} below threshold`;
+        `Confidence ${stage2Data.confidence.toFixed(2)} below threshold`;
     }
 
     // Check if alternatives are too close in confidence
@@ -570,7 +643,7 @@ export async function POST(request: NextRequest) {
       common_name: stage2Data.common_name,
       scientific_name: stage2Data.scientific_name,
       confidence: stage2Data.confidence,
-      confidence_raw: stage2Parsed.data.confidence, // Before adjustment
+      confidence_raw: rawConfidence,
       reasoning: stage2Data.reasoning,
       identifying_features: stage2Data.identifying_features,
       alternatives: stage2Data.alternative_species,
@@ -581,7 +654,6 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Identification error:', error);
     
-    // Log whatever we have
     logIdentification(
       stage1Raw || 'N/A',
       stage1Data,
@@ -611,7 +683,7 @@ export async function POST(request: NextRequest) {
           : 'Identification failed',
         retryable: isRateLimit || isTimeout,
         needs_review: true,
-        stage1: stage1Data, // Include partial data if available
+        stage1: stage1Data,
       },
       { status: isRateLimit ? 429 : 500 }
     );
