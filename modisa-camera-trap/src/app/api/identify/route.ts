@@ -48,37 +48,27 @@ const SPECIES: Record<string, { common: string; scientific: string }> = {
   'secretarybird': { common: 'Secretarybird', scientific: 'Sagittarius serpentarius' },
   'spotted-eagle-owl': { common: 'Spotted Eagle-Owl', scientific: 'Bubo africanus' },
   'barn-owl': { common: 'Barn Owl', scientific: 'Tyto alba' },
+  'martial-eagle': { common: 'Martial Eagle', scientific: 'Polemaetus bellicosus' },
 };
 
 const SPECIES_LIST = Object.keys(SPECIES).join(',');
 
 const PROMPT = `Kalahari camera trap image. Identify all animals.
 Valid species: ${SPECIES_LIST}
-Return ONLY JSON: {"a":[["species-id",quantity,confidence]],"t":"day|night|dawn|dusk"}
-Example: {"a":[["porcupine",1,0.95],["lion",2,0.8]],"t":"night"}
-If no animals: {"a":[],"t":"day"}`;
+Extract date/time from image overlay (usually bottom of image).
+Return ONLY JSON: {"a":[["species-id",quantity,confidence]],"t":"day|night|dawn|dusk","d":"YYYY-MM-DD HH:MM"}
+Example: {"a":[["porcupine",1,0.95]],"t":"night","d":"2024-03-15 22:47"}
+If no date visible, omit "d". If no animals: {"a":[],"t":"day"}`;
 
 function extractJSON(text: string): any {
-  // Try direct parse first
   try { return JSON.parse(text); } catch {}
-  
-  // Clean markdown code blocks
-  const cleaned = text
-    .replace(/```json\s*/gi, '')
-    .replace(/```\s*/gi, '')
-    .trim();
+  const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
   try { return JSON.parse(cleaned); } catch {}
-  
-  // Try to find JSON object in text
   const match = text.match(/\{[\s\S]*\}/);
-  if (match) {
-    try { return JSON.parse(match[0]); } catch {}
-  }
-  
+  if (match) try { return JSON.parse(match[0]); } catch {}
   return null;
 }
 
-// Helper to safely convert to number with fallback
 function safeNumber(val: any, fallback: number): number {
   const num = Number(val);
   return isNaN(num) ? fallback : num;
@@ -88,23 +78,16 @@ function parseAnimals(data: any): any[] {
   const animals: any[] = [];
   const rawArray = data.a || data.animals || [];
   
-  if (!Array.isArray(rawArray)) {
-    console.log('No valid animals array found in:', data);
-    return animals;
-  }
+  if (!Array.isArray(rawArray)) return animals;
   
   for (const item of rawArray) {
-    let id: string;
-    let qty: number;
-    let conf: number;
+    let id: string, qty: number, conf: number;
     
     if (Array.isArray(item)) {
-      // Compact format: ["porcupine", 1, 0.95]
       id = String(item[0] || 'unknown');
       qty = safeNumber(item[1], 1);
       conf = safeNumber(item[2], 0.5);
     } else if (item && typeof item === 'object') {
-      // Object format: {id: "porcupine", qty: 1, conf: 0.95}
       id = String(item.id || item.species_id || item.species || 'unknown');
       qty = safeNumber(item.qty ?? item.quantity, 1);
       conf = safeNumber(item.conf ?? item.confidence, 0.5);
@@ -122,7 +105,6 @@ function parseAnimals(data: any): any[] {
     });
   }
   
-  console.log('Parsed animals:', JSON.stringify(animals));
   return animals;
 }
 
@@ -160,19 +142,17 @@ export async function POST(request: NextRequest) {
     }
 
     const animals = parseAnimals(data);
-    const timeOfDay = data.t || data.time_of_day || data.time || 'unknown';
+    const timeOfDay = data.t || data.time_of_day || 'unknown';
+    const dateTime = data.d || data.date_time || data.date || null;
 
-    const result = {
+    return NextResponse.json({
       success: true,
       detected: animals.length > 0,
       animals,
       time_of_day: timeOfDay,
-      date_time: data.d || data.date_time || data.date || null,
+      date_time: dateTime,
       needs_review: animals.length === 0 || animals.some(a => a.confidence < 0.6),
-    };
-    
-    console.log('Returning:', JSON.stringify(result));
-    return NextResponse.json(result);
+    });
 
   } catch (error: any) {
     console.error('API error:', error);
