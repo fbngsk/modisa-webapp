@@ -59,70 +59,70 @@ Example: {"a":[["porcupine",1,0.95],["lion",2,0.8]],"t":"night"}
 If no animals: {"a":[],"t":"day"}`;
 
 function extractJSON(text: string): any {
+  // Try direct parse first
   try { return JSON.parse(text); } catch {}
-  const cleaned = text.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
+  
+  // Clean markdown code blocks
+  const cleaned = text
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/gi, '')
+    .trim();
   try { return JSON.parse(cleaned); } catch {}
+  
+  // Try to find JSON object in text
   const match = text.match(/\{[\s\S]*\}/);
-  if (match) try { return JSON.parse(match[0]); } catch {}
+  if (match) {
+    try { return JSON.parse(match[0]); } catch {}
+  }
+  
   return null;
+}
+
+// Helper to safely convert to number with fallback
+function safeNumber(val: any, fallback: number): number {
+  const num = Number(val);
+  return isNaN(num) ? fallback : num;
 }
 
 function parseAnimals(data: any): any[] {
   const animals: any[] = [];
+  const rawArray = data.a || data.animals || [];
   
-  // Handle compact format: {"a":[["porcupine",1,0.95]]}
-  if (Array.isArray(data.a)) {
-    for (const item of data.a) {
-      if (Array.isArray(item) && item.length >= 1) {
-        const [id, qty, conf] = item;
-        const species = SPECIES[id];
-        animals.push({
-          species_id: id,
-          common_name: species?.common || id,
-          scientific_name: species?.scientific || '',
-          quantity: typeof qty === 'number' ? qty : 1,
-          confidence: typeof conf === 'number' ? conf : 0.5,
-        });
-      }
-    }
+  if (!Array.isArray(rawArray)) {
+    console.log('No valid animals array found in:', data);
+    return animals;
   }
   
-  // Handle object format: {"a":[{"id":"porcupine","qty":1,"conf":0.95}]}
-  if (animals.length === 0 && Array.isArray(data.a)) {
-    for (const item of data.a) {
-      if (item && typeof item === 'object' && !Array.isArray(item)) {
-        const id = item.id || item.species_id || item.species;
-        if (id) {
-          const species = SPECIES[id];
-          animals.push({
-            species_id: id,
-            common_name: species?.common || item.common_name || id,
-            scientific_name: species?.scientific || item.scientific_name || '',
-            quantity: item.qty || item.quantity || 1,
-            confidence: item.conf || item.confidence || 0.5,
-          });
-        }
-      }
+  for (const item of rawArray) {
+    let id: string;
+    let qty: number;
+    let conf: number;
+    
+    if (Array.isArray(item)) {
+      // Compact format: ["porcupine", 1, 0.95]
+      id = String(item[0] || 'unknown');
+      qty = safeNumber(item[1], 1);
+      conf = safeNumber(item[2], 0.5);
+    } else if (item && typeof item === 'object') {
+      // Object format: {id: "porcupine", qty: 1, conf: 0.95}
+      id = String(item.id || item.species_id || item.species || 'unknown');
+      qty = safeNumber(item.qty ?? item.quantity, 1);
+      conf = safeNumber(item.conf ?? item.confidence, 0.5);
+    } else {
+      continue;
     }
+    
+    const species = SPECIES[id];
+    animals.push({
+      species_id: id,
+      common_name: species?.common || id.charAt(0).toUpperCase() + id.slice(1).replace(/-/g, ' '),
+      scientific_name: species?.scientific || '',
+      quantity: qty,
+      confidence: conf,
+    });
   }
   
-  // Handle full format: {"animals":[{...}]}
-  if (animals.length === 0 && Array.isArray(data.animals)) {
-    for (const item of data.animals) {
-      const id = item.species_id || item.id || item.species;
-      if (id) {
-        const species = SPECIES[id];
-        animals.push({
-          species_id: id,
-          common_name: species?.common || item.common_name || id,
-          scientific_name: species?.scientific || item.scientific_name || '',
-          quantity: item.quantity || item.qty || 1,
-          confidence: item.confidence || item.conf || 0.5,
-        });
-      }
-    }
-  }
-  
+  console.log('Parsed animals:', JSON.stringify(animals));
   return animals;
 }
 
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
     const mimeType = image.includes('data:') ? image.split(';')[0].split(':')[1] : 'image/jpeg';
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       contents: [
         { text: PROMPT },
         { inlineData: { mimeType, data: base64Data } }
@@ -150,26 +150,29 @@ export async function POST(request: NextRequest) {
     });
 
     const responseText = response.text || '';
-    console.log('Gemini response:', responseText); // Debug log
+    console.log('Gemini response:', responseText);
     
     const data = extractJSON(responseText);
     
     if (!data) {
-      console.error('Failed to parse:', responseText);
+      console.error('Failed to parse JSON from:', responseText);
       return NextResponse.json({ success: false, error: 'Parse failed', needs_review: true });
     }
 
     const animals = parseAnimals(data);
     const timeOfDay = data.t || data.time_of_day || data.time || 'unknown';
 
-    return NextResponse.json({
+    const result = {
       success: true,
       detected: animals.length > 0,
       animals,
       time_of_day: timeOfDay,
       date_time: data.d || data.date_time || data.date || null,
       needs_review: animals.length === 0 || animals.some(a => a.confidence < 0.6),
-    });
+    };
+    
+    console.log('Returning:', JSON.stringify(result));
+    return NextResponse.json(result);
 
   } catch (error: any) {
     console.error('API error:', error);
