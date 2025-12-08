@@ -11,20 +11,32 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+interface Animal {
+  species_id: string;
+  common_name: string;
+  scientific_name: string;
+  quantity: number;
+  confidence: number;
+}
+
+interface AIResult {
+  success: boolean;
+  detected: boolean;
+  animals: Animal[];
+  time_of_day: string;
+  date_time?: string;
+  needs_review?: boolean;
+}
+
 interface ImageFile {
   file: File;
   preview: string;
   status: 'pending' | 'identifying' | 'done' | 'error' | 'retrying';
-  aiResult?: {
-    species_id: string;
-    confidence: number;
-    reasoning: string;
-  };
+  aiResult?: AIResult;
   error?: string;
   retryCount: number;
 }
 
-// Helper function to wait
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export default function UploadPage() {
@@ -44,7 +56,6 @@ export default function UploadPage() {
     });
   };
 
-  // Identify a single image with retry logic
   const identifyImage = async (file: File, index: number, retryCount = 0): Promise<void> => {
     const maxRetries = 3;
     const retryDelay = 2000;
@@ -102,14 +113,11 @@ export default function UploadPage() {
     }
   };
 
-  // Process images sequentially starting from a given index
   const processImagesSequentially = async (files: File[], startIndex: number) => {
     for (let i = 0; i < files.length; i++) {
       const stateIndex = startIndex + i;
       setProcessingIndex(stateIndex);
-      
       await identifyImage(files[i], stateIndex);
-      
       if (i < files.length - 1) {
         await delay(500);
       }
@@ -132,14 +140,12 @@ export default function UploadPage() {
 
     setImages(prev => [...prev, ...newImages]);
     
-    // Start processing after state update
     setTimeout(() => {
       processImagesSequentially(files, startIndex);
     }, 100);
 
   }, [images.length]);
 
-  // Retry single failed image
   const retryIdentification = async (index: number) => {
     const imageToRetry = images[index];
     if (imageToRetry) {
@@ -177,13 +183,16 @@ export default function UploadPage() {
           .from('camera-trap-images')
           .getPublicUrl(filePath);
 
+        // Get first animal for primary suggestion (or null if none)
+        const primaryAnimal = image.aiResult?.animals?.[0];
+
         const { error: insertError } = await supabase
           .from('sightings')
           .insert({
             image_url: urlData.publicUrl,
             camera_station: stationId,
-            ai_suggestion: image.aiResult?.species_id || null,
-            ai_confidence: image.aiResult?.confidence || null,
+            ai_suggestion: primaryAnimal?.species_id || null,
+            ai_confidence: primaryAnimal?.confidence || null,
             status: 'pending'
           });
 
@@ -198,9 +207,14 @@ export default function UploadPage() {
     }
   };
 
-  const getSpeciesName = (id: string): string => {
-    const species = SPECIES_LIST.find(s => s.id === id);
-    return species?.commonName || id;
+  const formatTimeOfDay = (time: string): string => {
+    const labels: Record<string, string> = {
+      'day': '☀️ Day',
+      'night': '🌙 Night',
+      'dawn': '🌅 Dawn',
+      'dusk': '🌆 Dusk'
+    };
+    return labels[time] || time;
   };
 
   const getStatusBadge = (image: ImageFile, index: number) => {
@@ -212,17 +226,28 @@ export default function UploadPage() {
       case 'retrying':
         return <span className="text-orange-400">🔄 Retry {image.retryCount}/3...</span>;
       case 'done':
+        const result = image.aiResult;
+        if (!result?.detected || !result.animals?.length) {
+          return <span className="text-gray-400">No animals detected</span>;
+        }
         return (
-          <div>
-            <span className="text-green-400 font-medium">
-              {getSpeciesName(image.aiResult!.species_id)}
-            </span>
-            <span className="text-gray-400 ml-2">
-              ({Math.round(image.aiResult!.confidence * 100)}%)
-            </span>
-            {image.aiResult!.reasoning && (
-              <p className="text-gray-500 text-sm mt-1">{image.aiResult!.reasoning}</p>
-            )}
+          <div className="space-y-1">
+            {result.animals.map((animal, i) => (
+              <div key={i} className="text-sm">
+                <span className="text-green-400 font-medium">
+                  {animal.common_name}
+                </span>
+                {animal.scientific_name && (
+                  <span className="text-gray-500 italic ml-1">({animal.scientific_name})</span>
+                )}
+                <span className="text-gray-400 ml-2">
+                  ×{animal.quantity} • {Math.round(animal.confidence * 100)}%
+                </span>
+              </div>
+            ))}
+            <div className="text-gray-500 text-xs">
+              {formatTimeOfDay(result.time_of_day)}
+            </div>
           </div>
         );
       case 'error':
@@ -254,7 +279,6 @@ export default function UploadPage() {
           <span className="text-green-400">Upload</span> Images
         </h1>
 
-        {/* Camera Station Selection */}
         <div className="mb-6">
           <label className="block text-sm mb-2">Camera Station</label>
           <select
@@ -271,7 +295,6 @@ export default function UploadPage() {
           </select>
         </div>
 
-        {/* File Input */}
         <div className="mb-6">
           <label className="block border-2 border-dashed border-green-500/50 rounded-xl p-8 text-center cursor-pointer hover:border-green-400 transition">
             <input
@@ -288,7 +311,6 @@ export default function UploadPage() {
           </label>
         </div>
 
-        {/* Progress indicator */}
         {isProcessing && (
           <div className="mb-4 p-3 bg-gray-800 rounded-lg">
             <div className="flex items-center gap-2">
@@ -300,7 +322,6 @@ export default function UploadPage() {
           </div>
         )}
 
-        {/* Image Previews */}
         {images.length > 0 && (
           <div className="space-y-3 mb-6">
             {images.map((image, index) => (
@@ -328,14 +349,12 @@ export default function UploadPage() {
           </div>
         )}
 
-        {/* Error Message */}
         {error && (
           <div className="mb-4 p-3 bg-red-500/20 border border-red-500 rounded-lg text-red-400">
             {error}
           </div>
         )}
 
-        {/* Upload Button */}
         <button
           onClick={handleUpload}
           disabled={!stationId || !hasImages || uploading || isProcessing}
@@ -344,7 +363,6 @@ export default function UploadPage() {
           {uploading ? 'Uploading...' : isProcessing ? 'Identifying...' : `Upload ${images.length} Image${images.length !== 1 ? 's' : ''}`}
         </button>
 
-        {/* Stats */}
         {hasImages && (
           <div className="mt-4 text-center text-sm text-gray-400">
             {images.filter(i => i.status === 'done').length} identified • 
