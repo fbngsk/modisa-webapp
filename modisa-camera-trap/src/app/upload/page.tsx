@@ -217,54 +217,32 @@ export default function UploadPage() {
     return labels[time] || time;
   };
 
-  const getStatusBadge = (image: ImageFile, index: number) => {
-    switch (image.status) {
-      case 'pending':
-        return <span className="text-gray-400">Waiting...</span>;
-      case 'identifying':
-        return <span className="text-yellow-400">🔍 Identifying...</span>;
-      case 'retrying':
-        return <span className="text-orange-400">🔄 Retry {image.retryCount}/3...</span>;
-      case 'done':
-        const result = image.aiResult;
-        if (!result?.detected || !result.animals?.length) {
-          return <span className="text-gray-400">No animals detected</span>;
-        }
-        return (
-          <div className="space-y-1">
-            {result.animals.map((animal, i) => (
-              <div key={i} className="text-sm">
-                <span className="text-green-400 font-medium">
-                  {animal.common_name}
-                </span>
-                {animal.scientific_name && (
-                  <span className="text-gray-500 italic ml-1">({animal.scientific_name})</span>
-                )}
-                <span className="text-gray-400 ml-2">
-                  ×{animal.quantity} • {Math.round(animal.confidence * 100)}%
-                </span>
-              </div>
-            ))}
-            <div className="text-gray-500 text-xs">
-              {formatTimeOfDay(result.time_of_day)}
-            </div>
-          </div>
-        );
-      case 'error':
-        return (
-          <div className="flex items-center gap-2">
-            <span className="text-red-400">Failed</span>
-            <button 
-              onClick={() => retryIdentification(index)}
-              className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded"
-            >
-              Retry
-            </button>
-          </div>
-        );
-    }
-  };
-
+  case 'done':
+  const result = image.aiResult;
+  if (!result?.detected || !result.animals?.length) {
+    return <span className="text-gray-400">No animals detected</span>;
+  }
+  return (
+    <div className="space-y-1">
+      {result.animals.map((animal, i) => (
+        <div key={i} className="text-sm">
+          <span className="text-green-400 font-medium">
+            {animal.common_name}
+          </span>
+          {animal.scientific_name && (
+            <span className="text-gray-500 italic ml-1">({animal.scientific_name})</span>
+          )}
+          <span className="text-gray-400 ml-2">
+            ×{animal.quantity} • {Math.round(animal.confidence * 100)}%
+          </span>
+        </div>
+      ))}
+      <div className="text-gray-500 text-xs flex gap-2">
+        {formatTimeOfDay(result.time_of_day)}
+        {result.date_time && <span>📅 {result.date_time}</span>}
+      </div>
+    </div>
+  );
   const isProcessing = images.some(img => img.status === 'identifying' || img.status === 'retrying');
   const hasImages = images.length > 0;
 
