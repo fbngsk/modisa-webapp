@@ -1,36 +1,34 @@
-import { GoogleGenAI } from '@google/genai'; 
 import { NextRequest, NextResponse } from 'next/server';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-
+// Species list - IDs must match exactly what AI returns
 const SPECIES: Record<string, { common: string; scientific: string }> = {
   'aardvark': { common: 'Aardvark', scientific: 'Orycteropus afer' },
   'aardwolf': { common: 'Aardwolf', scientific: 'Proteles cristata' },
-  'african-civet': { common: 'African Civet', scientific: 'Civettictis civetta' },
-  'african-wildcat': { common: 'African Wildcat', scientific: 'Felis lybica' },
+  'african-wild-cat': { common: 'African Wild Cat', scientific: 'Felis lybica' },
+  'african-wild-dog': { common: 'African Wild Dog', scientific: 'Lycaon pictus' },
   'bat-eared-fox': { common: 'Bat-eared Fox', scientific: 'Otocyon megalotis' },
   'black-backed-jackal': { common: 'Black-backed Jackal', scientific: 'Lupulella mesomelas' },
-  'black-footed-cat': { common: 'Black-footed Cat', scientific: 'Felis nigripes' },
   'brown-hyena': { common: 'Brown Hyena', scientific: 'Parahyaena brunnea' },
   'cape-fox': { common: 'Cape Fox', scientific: 'Vulpes chama' },
   'caracal': { common: 'Caracal', scientific: 'Caracal caracal' },
   'cheetah': { common: 'Cheetah', scientific: 'Acinonyx jubatus' },
-  'common-duiker': { common: 'Common Duiker', scientific: 'Sylvicapra grimmia' },
-  'common-genet': { common: 'Common Genet', scientific: 'Genetta genetta' },
+  'duiker': { common: 'Common Duiker', scientific: 'Sylvicapra grimmia' },
   'eland': { common: 'Eland', scientific: 'Taurotragus oryx' },
-  'elephant': { common: 'African Elephant', scientific: 'Loxodonta africana' },
   'gemsbok': { common: 'Gemsbok', scientific: 'Oryx gazella' },
+  'genet': { common: 'Large-spotted Genet', scientific: 'Genetta tigrina' },
   'giraffe': { common: 'Giraffe', scientific: 'Giraffa camelopardalis' },
   'ground-squirrel': { common: 'Ground Squirrel', scientific: 'Xerus inauris' },
   'hartebeest': { common: 'Red Hartebeest', scientific: 'Alcelaphus buselaphus' },
   'honey-badger': { common: 'Honey Badger', scientific: 'Mellivora capensis' },
   'kudu': { common: 'Greater Kudu', scientific: 'Tragelaphus strepsiceros' },
-  'large-spotted-genet': { common: 'Large-spotted Genet', scientific: 'Genetta tigrina' },
   'leopard': { common: 'Leopard', scientific: 'Panthera pardus' },
   'lion': { common: 'Lion', scientific: 'Panthera leo' },
   'meerkat': { common: 'Meerkat', scientific: 'Suricata suricatta' },
+  'ostrich': { common: 'Ostrich', scientific: 'Struthio camelus' },
+  'pangolin': { common: 'Pangolin', scientific: 'Smutsia temminckii' },
   'porcupine': { common: 'Cape Porcupine', scientific: 'Hystrix africaeaustralis' },
   'scrub-hare': { common: 'Scrub Hare', scientific: 'Lepus saxatilis' },
+  'secretarybird': { common: 'Secretarybird', scientific: 'Sagittarius serpentarius' },
   'serval': { common: 'Serval', scientific: 'Leptailurus serval' },
   'slender-mongoose': { common: 'Slender Mongoose', scientific: 'Herpestes sanguineus' },
   'spotted-hyena': { common: 'Spotted Hyena', scientific: 'Crocuta crocuta' },
@@ -39,111 +37,110 @@ const SPECIES: Record<string, { common: string; scientific: string }> = {
   'steenbok': { common: 'Steenbok', scientific: 'Raphicerus campestris' },
   'striped-polecat': { common: 'Striped Polecat', scientific: 'Ictonyx striatus' },
   'warthog': { common: 'Warthog', scientific: 'Phacochoerus africanus' },
-  'wild-dog': { common: 'African Wild Dog', scientific: 'Lycaon pictus' },
   'wildebeest': { common: 'Blue Wildebeest', scientific: 'Connochaetes taurinus' },
   'yellow-mongoose': { common: 'Yellow Mongoose', scientific: 'Cynictis penicillata' },
-  'zebra': { common: 'Plains Zebra', scientific: 'Equus quagga' },
-  'ostrich': { common: 'Ostrich', scientific: 'Struthio camelus' },
   'kori-bustard': { common: 'Kori Bustard', scientific: 'Ardeotis kori' },
-  'secretarybird': { common: 'Secretarybird', scientific: 'Sagittarius serpentarius' },
-  'spotted-eagle-owl': { common: 'Spotted Eagle-Owl', scientific: 'Bubo africanus' },
-  'barn-owl': { common: 'Barn Owl', scientific: 'Tyto alba' },
   'martial-eagle': { common: 'Martial Eagle', scientific: 'Polemaetus bellicosus' },
 };
 
-const SPECIES_LIST = Object.keys(SPECIES).join(',');
+const SPECIES_IDS = Object.keys(SPECIES).join(',');
 
-const PROMPT = `Kalahari camera trap image. Identify all animals.
-Valid species: ${SPECIES_LIST}
-Extract date/time from image overlay (usually bottom of image).
-Return ONLY JSON: {"a":[["species-id",quantity,confidence]],"t":"day|night|dawn|dusk","d":"YYYY-MM-DD HH:MM"}
-Example: {"a":[["porcupine",1,0.95]],"t":"night","d":"2024-03-15 22:47"}
-If no date visible, omit "d". If no animals: {"a":[],"t":"day"}`;
+const PROMPT = `Camera trap image from Kalahari, Botswana. Identify ALL animals visible.
 
-function extractJSON(text: string): any {
-  try { return JSON.parse(text); } catch {}
-  const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
-  try { return JSON.parse(cleaned); } catch {}
-  const match = text.match(/\{[\s\S]*\}/);
-  if (match) try { return JSON.parse(match[0]); } catch {}
-  return null;
-}
+RESPOND ONLY WITH JSON: {"a":[["species-id",qty,conf]],"t":"day|night|dawn|dusk","d":"YYYY-MM-DD HH:MM"}
 
-function safeNumber(val: any, fallback: number): number {
-  const num = Number(val);
-  return isNaN(num) ? fallback : num;
-}
+a = animals array: [species-id, quantity, confidence 0-1]
+t = time of day based on lighting
+d = date/time from image overlay text (if visible, usually at bottom of image)
 
-function parseAnimals(data: any): any[] {
-  const animals: any[] = [];
-  const rawArray = data.a || data.animals || [];
-  
-  if (!Array.isArray(rawArray)) return animals;
-  
-  for (const item of rawArray) {
-    let id: string, qty: number, conf: number;
-    
-    if (Array.isArray(item)) {
-      id = String(item[0] || 'unknown');
-      qty = safeNumber(item[1], 1);
-      conf = safeNumber(item[2], 0.5);
-    } else if (item && typeof item === 'object') {
-      id = String(item.id || item.species_id || item.species || 'unknown');
-      qty = safeNumber(item.qty ?? item.quantity, 1);
-      conf = safeNumber(item.conf ?? item.confidence, 0.5);
-    } else {
-      continue;
-    }
-    
-    const species = SPECIES[id];
-    animals.push({
-      species_id: id,
-      common_name: species?.common || id.charAt(0).toUpperCase() + id.slice(1).replace(/-/g, ' '),
-      scientific_name: species?.scientific || '',
-      quantity: qty,
-      confidence: conf,
-    });
-  }
-  
-  return animals;
-}
+VALID SPECIES IDs: ${SPECIES_IDS}
+
+If no animal or unclear: {"a":[],"t":"day","d":""}
+Multiple animals: {"a":[["springbok",3,0.9],["gemsbok",1,0.85]],"t":"day","d":"2024-03-15 14:32"}
+
+Night/infrared: use eye shine, body shape, size for ID.`;
 
 export async function POST(request: NextRequest) {
   try {
     const { image } = await request.json();
 
     if (!image) {
-      return NextResponse.json({ success: false, error: 'No image' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'No image provided' }, { status: 400 });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ success: false, error: 'No API key' }, { status: 500 });
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({ success: false, error: 'API key not configured' }, { status: 500 });
     }
 
-    const base64Data = image.includes('base64,') ? image.split('base64,')[1] : image;
-    const mimeType = image.includes('data:') ? image.split(';')[0].split(':')[1] : 'image/jpeg';
+    // Remove data URL prefix if present
+    const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: [
-        { text: PROMPT },
-        { inlineData: { mimeType, data: base64Data } }
-      ],
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: PROMPT },
+              { inline_data: { mime_type: 'image/jpeg', data: base64Data } }
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 200,
+          }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Gemini API error:', errorText);
+      return NextResponse.json({ success: false, error: 'AI service error' }, { status: 500 });
+    }
+
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+    // Extract JSON from response
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return NextResponse.json({
+        success: true,
+        detected: false,
+        animals: [],
+        time_of_day: 'unknown',
+        date_time: null,
+        needs_review: true,
+      });
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    
+    // Parse compact format
+    const rawAnimals = parsed.a || [];
+    const timeOfDay = parsed.t || 'unknown';
+    const dateTime = parsed.d || null;
+
+    // Expand to full format with species lookup
+    const animals = rawAnimals.map((item: [string, number, number]) => {
+      const [speciesId, quantity, confidence] = item;
+      const speciesInfo = SPECIES[speciesId];
+      
+      return {
+        species_id: speciesId,
+        common_name: speciesInfo?.common || speciesId,
+        scientific_name: speciesInfo?.scientific || '',
+        quantity: quantity || 1,
+        confidence: confidence || 0,
+      };
     });
 
-    const responseText = response.text || '';
-    console.log('Gemini response:', responseText);
-    
-    const data = extractJSON(responseText);
-    
-    if (!data) {
-      console.error('Failed to parse JSON from:', responseText);
-      return NextResponse.json({ success: false, error: 'Parse failed', needs_review: true });
-    }
-
-    const animals = parseAnimals(data);
-    const timeOfDay = data.t || data.time_of_day || 'unknown';
-    const dateTime = data.d || data.date_time || data.date || null;
+    // Flag for review if no animals detected OR any animal has <85% confidence
+    const needsReview = animals.length === 0 || animals.some((a: { confidence: number }) => a.confidence < 0.85);
 
     return NextResponse.json({
       success: true,
@@ -151,15 +148,14 @@ export async function POST(request: NextRequest) {
       animals,
       time_of_day: timeOfDay,
       date_time: dateTime,
-      needs_review: animals.length === 0 || animals.some(a => a.confidence < 0.6),
+      needs_review: needsReview,
     });
 
-  } catch (error: any) {
-    console.error('API error:', error);
-    return NextResponse.json({
-      success: false,
-      error: error?.message || 'Failed',
-      needs_review: true,
-    }, { status: 500 });
+  } catch (error) {
+    console.error('Identification error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to identify species' },
+      { status: 500 }
+    );
   }
 }
