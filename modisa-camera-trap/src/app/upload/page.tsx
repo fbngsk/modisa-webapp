@@ -50,7 +50,7 @@ export default function UploadPage() {
       const response = await fetch('/api/identify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: base64 })
+        body: JSON.stringify({ image: base64 })
       });
 
       // Handle rate limiting with retry
