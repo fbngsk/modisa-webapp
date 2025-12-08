@@ -35,17 +35,26 @@ export default function UploadPage() {
   const [error, setError] = useState<string | null>(null);
   const [processingIndex, setProcessingIndex] = useState<number | null>(null);
 
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+    });
+  };
+
   // Identify a single image with retry logic
-  const identifyImage = async (imageFile: ImageFile, index: number, retryCount = 0): Promise<void> => {
+  const identifyImage = async (file: File, index: number, retryCount = 0): Promise<void> => {
     const maxRetries = 3;
-    const retryDelay = 2000; // 2 seconds between retries
+    const retryDelay = 2000;
 
     setImages(prev => prev.map((img, i) => 
       i === index ? { ...img, status: retryCount > 0 ? 'retrying' : 'identifying', retryCount } : img
     ));
 
     try {
-      const base64 = await fileToBase64(imageFile.file);
+      const base64 = await fileToBase64(file);
       
       const response = await fetch('/api/identify', {
         method: 'POST',
@@ -53,10 +62,9 @@ export default function UploadPage() {
         body: JSON.stringify({ image: base64 })
       });
 
-      // Handle rate limiting with retry
       if (response.status === 429 && retryCount < maxRetries) {
-        await delay(retryDelay * (retryCount + 1)); // Exponential backoff
-        return identifyImage(imageFile, index, retryCount + 1);
+        await delay(retryDelay * (retryCount + 1));
+        return identifyImage(file, index, retryCount + 1);
       }
 
       if (!response.ok) {
@@ -66,10 +74,9 @@ export default function UploadPage() {
       const result = await response.json();
 
       if (result.error) {
-        // Retry on certain errors
         if (result.retryable && retryCount < maxRetries) {
           await delay(retryDelay * (retryCount + 1));
-          return identifyImage(imageFile, index, retryCount + 1);
+          return identifyImage(file, index, retryCount + 1);
         }
         throw new Error(result.error);
       }
@@ -79,10 +86,9 @@ export default function UploadPage() {
       ));
 
     } catch (err) {
-      // Retry on network errors
       if (retryCount < maxRetries) {
         await delay(retryDelay * (retryCount + 1));
-        return identifyImage(imageFile, index, retryCount + 1);
+        return identifyImage(file, index, retryCount + 1);
       }
 
       setImages(prev => prev.map((img, i) => 
@@ -96,43 +102,26 @@ export default function UploadPage() {
     }
   };
 
-  // Process images sequentially
-  const processImagesSequentially = async (newImages: ImageFile[]) => {
-    for (let i = 0; i < newImages.length; i++) {
-      setProcessingIndex(i);
+  // Process images sequentially starting from a given index
+  const processImagesSequentially = async (files: File[], startIndex: number) => {
+    for (let i = 0; i < files.length; i++) {
+      const stateIndex = startIndex + i;
+      setProcessingIndex(stateIndex);
       
-      // Get current state of image
-      const currentImages = await new Promise<ImageFile[]>(resolve => {
-        setImages(prev => {
-          resolve(prev);
-          return prev;
-        });
-      });
-
-      const imageToProcess = currentImages[i];
-      if (imageToProcess && imageToProcess.status === 'pending') {
-        await identifyImage(imageToProcess, i);
-        // Small delay between images to avoid rate limiting
-        if (i < newImages.length - 1) {
-          await delay(500);
-        }
+      await identifyImage(files[i], stateIndex);
+      
+      if (i < files.length - 1) {
+        await delay(500);
       }
     }
     setProcessingIndex(null);
   };
 
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-    });
-  };
-
-  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
+
+    const startIndex = images.length;
 
     const newImages: ImageFile[] = files.map(file => ({
       file,
@@ -143,13 +132,9 @@ export default function UploadPage() {
 
     setImages(prev => [...prev, ...newImages]);
     
-    // Start sequential processing
-    const startIndex = images.length;
-    const imagesToProcess = newImages.map((img, i) => ({ ...img, index: startIndex + i }));
-    
-    // Update state first, then process
+    // Start processing after state update
     setTimeout(() => {
-      processImagesSequentially(newImages);
+      processImagesSequentially(files, startIndex);
     }, 100);
 
   }, [images.length]);
@@ -158,7 +143,7 @@ export default function UploadPage() {
   const retryIdentification = async (index: number) => {
     const imageToRetry = images[index];
     if (imageToRetry) {
-      await identifyImage(imageToRetry, index, 0);
+      await identifyImage(imageToRetry.file, index, 0);
     }
   };
 
@@ -179,7 +164,6 @@ export default function UploadPage() {
 
     try {
       for (const image of images) {
-        // Upload to Supabase Storage
         const fileName = `${Date.now()}-${image.file.name}`;
         const filePath = `${stationId}/${fileName}`;
 
@@ -189,12 +173,10 @@ export default function UploadPage() {
 
         if (uploadError) throw uploadError;
 
-        // Get public URL
         const { data: urlData } = supabase.storage
           .from('camera-trap-images')
           .getPublicUrl(filePath);
 
-        // Insert sighting record
         const { error: insertError } = await supabase
           .from('sightings')
           .insert({
@@ -216,10 +198,10 @@ export default function UploadPage() {
     }
   };
 
-const getSpeciesName = (id: string): string => {
-  const species = SPECIES_LIST.find(s => s.id === id);
-  return species?.commonName || id;
-};
+  const getSpeciesName = (id: string): string => {
+    const species = SPECIES_LIST.find(s => s.id === id);
+    return species?.commonName || id;
+  };
 
   const getStatusBadge = (image: ImageFile, index: number) => {
     switch (image.status) {
