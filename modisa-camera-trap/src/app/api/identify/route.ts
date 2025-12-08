@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI } from '@google/genai'; 
 import { NextRequest, NextResponse } from 'next/server';
 
 // Initialize Gemini with new SDK
